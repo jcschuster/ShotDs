@@ -50,7 +50,7 @@ Terms are internally represented as Elixir structs, whereas HOL opted for
 Erlang records. Even though structs are slightly less efficient, they offer a
 far superior developper experience and are the preferred option in the Elixir
 ecosystem. The module
-[`ShotDs.Data.Terms`](https://hexdocs.pm/shot_ds/ShotDs.Data.Terms.html)
+[`ShotDs.Data.Term`](https://hexdocs.pm/shot_ds/ShotDs.Data.Term.html)
 describes this representation in detail.
 
 Terms which are created using the provided API are always ensured to be in
