@@ -2,8 +2,7 @@ defmodule ShotDs.TermFactory do
   @moduledoc groups: [:"Term Cache", :"Term Construction API"]
   @moduledoc """
   Contains functionality of creating, memoizing and accessing terms using an
-  ETS cache. `ShotDs.TermFactory.init` must be called exactly once before the
-  API can be used.
+  ETS cache.
 
   In Hol, terms often share sub-expressions, meaning they form Directed Acyclic
   Graphs (DAGs) rather than simple abstract syntax trees (ASTs). Hence,
@@ -30,8 +29,7 @@ defmodule ShotDs.TermFactory do
   identified if they share the same *signature*, e.g., all fields but `id`.
 
   Returns the looked up or generated ID of the term. ID's are generated as
-  blake2s hashes (https://www.blake2.net/) ensuring collisions to be highly
-  unlikely and deterministic ID generation for concurrent processing.
+  positive integers in a concurrency-safe way.
 
   ## Example:
 
@@ -90,7 +88,7 @@ defmodule ShotDs.TermFactory do
   @doc group: :"Term Construction API"
   @doc """
   Creates and memoizes a term representing a single free variable, bound
-  variable or constant. Handles η-expansion automatically.
+  variable or constant. Handles eta-expansion automatically.
 
   ## Example:
 

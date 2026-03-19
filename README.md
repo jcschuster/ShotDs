@@ -69,18 +69,14 @@ Term construction is internally entirely handeled by the modules
 [`ShotDs.TermFactory`](https://hexdocs.pm/shot_ds/ShotDs.TermFactory.html) and
 [`ShotDs.Semantics`](https://hexdocs.pm/shot_ds/ShotDs.Semantics.html). There
 are, however, more expressive options available which are implemented on top of
-these modules. The module
-[`ShotDs.Util.Builder`](https://hexdocs.pm/shot_ds/ShotDs.Util.Builder.html)
-defines two multi-purpose functions for defining abstraction and application.
-Furthermore, a domain-specific language (DSL) for constructing HOL terms is
+these modules. A domain-specific language (DSL) for constructing HOL terms is
 introduced in
 [`ShotDs.Hol.Dsl`](https://hexdocs.pm/shot_ds/ShotDs.Hol.Dsl.html). It uses the
 unused Elixir operators `&&&`, `|||`, `~>` and `<~>` as shorthand constructors.
 The following example illustrates this API:
 
 ```elixir
-import ShotDs.Util.Builder    # contains the lambda/2 function
-import ShotDs.Hol.Dsl         # contains neg/1, |||/2 and &&&/2
+import ShotDs.Hol.Dsl         # contains lambea/2, neg/1, |||/2 and &&&/2
 import ShotDs.Hol.Definitions # contains type_o/0
 
 def exclusive_or do
