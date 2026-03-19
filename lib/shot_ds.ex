@@ -8,23 +8,8 @@ defmodule ShotDs do
   alias ShotDs.TermFactory, as: TF
   alias ShotDs.Parser
   alias ShotDs.Tptp
-  alias ShotDs.Util.Builder
+  alias ShotDs.Hol.Dsl
   alias ShotDs.Util.Formatter
-
-  @doc """
-  Initializes a concurrent ETS cache used by the `ShotDs.TermFactory` module
-  for efficient memoization of HOL terms. A single call to this function is
-  required before using the term construction API.
-
-  Delegates the function call to `ShotDs.TermFactory.init/0`.
-
-  #### Note {: .warning}
-
-  This function can only be called once on the same BEAM VM! An `ArgumentError`
-  will be raised if it is called again.
-  """
-  @spec init() :: :ok
-  defdelegate init(), to: TF
 
   @doc """
   Parses a given string representing a formula in TH0 syntax with full type
@@ -158,7 +143,7 @@ defmodule ShotDs do
       iex> lambda([Type.new(:o), Type.new(:o), Type.new(:o)], fn x, y, z -> ... end)
   """
   @spec lambda([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
-  defdelegate lambda(var_types, body_fn), to: Builder
+  defdelegate lambda(var_types, body_fn), to: Dsl
 
   @doc """
   Applies a term to a single argument term or list of argument terms.
@@ -166,7 +151,7 @@ defmodule ShotDs do
   Delegates the function call to `ShotDs.Util.Builder.app/2`.
   """
   @spec app(Term.term_id(), [Term.term_id()] | Term.term_id()) :: Term.term_id()
-  defdelegate app(head_id, arg_ids), to: Builder
+  defdelegate app(head_id, arg_ids), to: Dsl
 
   @doc """
   Pretty-prints the given HOL object taking the ETS cache into accout for

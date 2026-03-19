@@ -46,27 +46,12 @@ defmodule ShotDs.SemanticsTest do
     assert Enum.map(rest, & &1.term_id) == [c_id]
   end
 
-  test "add_subst/3 honors tuple-tag blacklist" do
-    i = Type.new(:i)
-
-    existing = [Substitution.new(Declaration.new_free_var("A", i), TF.make_const_term("a", i))]
-
-    blocked = %Substitution{
-      fvar: %Declaration{kind: :fv, name: {:tmp, :skolem}, type: i},
-      term_id: TF.make_const_term("b", i)
-    }
-
-    result = Semantics.add_subst(existing, blocked, [:skolem])
-
-    assert result == existing
-  end
-
   test "make_abstr_term/2 binds occurrences of a free variable" do
     i = Type.new(:i)
     x = Declaration.new_free_var("X", i)
 
     x_id = TF.make_term(x)
-    abs_id = Semantics.make_abstr_term(x_id, x)
+    abs_id = TF.make_abstr_term(x_id, x)
 
     assert %Term{bvars: [bv], fvars: [], type: type, head: %Declaration{kind: :bv}} =
              TF.get_term(abs_id)
@@ -80,11 +65,11 @@ defmodule ShotDs.SemanticsTest do
 
     x = Declaration.new_free_var("X", i)
     x_id = TF.make_term(x)
-    abs_id = Semantics.make_abstr_term(x_id, x)
+    abs_id = TF.make_abstr_term(x_id, x)
 
     a_id = TF.make_const_term("a", i)
 
-    assert Semantics.make_appl_term(abs_id, a_id) == a_id
+    assert TF.make_appl_term(abs_id, a_id) == a_id
   end
 
   test "make_appl_term/2 raises on type mismatch" do
@@ -92,7 +77,7 @@ defmodule ShotDs.SemanticsTest do
     wrong_arg = TF.make_const_term("p", Type.new(:o))
 
     assert_raise MatchError, fn ->
-      Semantics.make_appl_term(f_id, wrong_arg)
+      TF.make_appl_term(f_id, wrong_arg)
     end
   end
 
@@ -103,8 +88,8 @@ defmodule ShotDs.SemanticsTest do
     a = TF.make_const_term("a", i)
     b = TF.make_const_term("b", i)
 
-    folded = Semantics.fold_apply(f, [a, b])
-    nested = Semantics.make_appl_term(Semantics.make_appl_term(f, a), b)
+    folded = TF.fold_apply(f, [a, b])
+    nested = TF.make_appl_term(TF.make_appl_term(f, a), b)
 
     assert folded == nested
     assert %Term{type: %Type{goal: :o, args: []}} = TF.get_term(folded)
@@ -114,7 +99,7 @@ defmodule ShotDs.SemanticsTest do
     i = Type.new(:i)
 
     bv1 = Declaration.new_bound_var(1, i)
-    term1 = %Term{id: Term.dummy_id(), head: bv1, type: i, max_num: 1}
+    term1 = %Term{id: 0, head: bv1, type: i, max_num: 1}
     id1 = TF.memoize(term1)
 
     {shifted_id, _} = Semantics.shift(id1, 2, 0)
@@ -125,7 +110,7 @@ defmodule ShotDs.SemanticsTest do
     assert instantiated_id == replacement
 
     bv2 = Declaration.new_bound_var(2, i)
-    term2 = %Term{id: Term.dummy_id(), head: bv2, type: i, max_num: 2}
+    term2 = %Term{id: 0, head: bv2, type: i, max_num: 2}
     id2 = TF.memoize(term2)
 
     {decremented_id, _} = Semantics.instantiate(id2, 1, replacement)

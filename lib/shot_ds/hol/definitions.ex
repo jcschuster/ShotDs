@@ -13,7 +13,6 @@ defmodule ShotDs.Hol.Definitions do
 
   alias ShotDs.Data.{Type, Declaration, Term}
   alias ShotDs.TermFactory, as: TF
-  import ShotDs.Util.Builder
 
   #############################################################################
   # TYPES
@@ -222,9 +221,11 @@ defmodule ShotDs.Hol.Definitions do
   signature, it is defined as negated disjunction.
   """
   def nor_term do
-    lambda([type_o(), type_o()], fn x, y ->
-      app(neg_term(), app(or_term(), [x, y]))
-    end)
+    x = Declaration.new_free_var("X", type_o())
+    y = Declaration.new_free_var("Y", type_o())
+
+    disj = or_term() |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
+    neg_term() |> TF.make_appl_term(disj) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -240,9 +241,11 @@ defmodule ShotDs.Hol.Definitions do
   signature, it is represented as negated conjunction.
   """
   def nand_term do
-    lambda([type_o(), type_o()], fn x, y ->
-      app(neg_term(), app(and_term(), [x, y]))
-    end)
+    x = Declaration.new_free_var("X", type_o())
+    y = Declaration.new_free_var("Y", type_o())
+
+    conj = and_term() |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
+    neg_term() |> TF.make_appl_term(conj) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -258,9 +261,14 @@ defmodule ShotDs.Hol.Definitions do
   of the signature, it is represented as implication with flipped arguments.
   """
   def implied_by_term do
-    lambda([type_o(), type_o()], fn x, y ->
-      app(implies_term(), [y, x])
-    end)
+    x = Declaration.new_free_var("X", type_o())
+    y = Declaration.new_free_var("Y", type_o())
+
+    implies_term()
+    |> TF.make_appl_term(TF.make_term(y))
+    |> TF.make_appl_term(TF.make_term(x))
+    |> TF.make_abstr_term(y)
+    |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -276,9 +284,15 @@ defmodule ShotDs.Hol.Definitions do
   signature, it is represented as negated equivalence.
   """
   def xor_term do
-    lambda([type_o(), type_o()], fn x, y ->
-      app(neg_term(), app(equivalent_term(), [x, y]))
-    end)
+    x = Declaration.new_free_var("X", type_o())
+    y = Declaration.new_free_var("Y", type_o())
+
+    equiv =
+      equivalent_term()
+      |> TF.make_appl_term(TF.make_term(x))
+      |> TF.make_appl_term(TF.make_term(y))
+
+    neg_term() |> TF.make_appl_term(equiv) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -295,9 +309,13 @@ defmodule ShotDs.Hol.Definitions do
   """
   @spec not_equals_term(Type.t()) :: Term.term_id()
   def not_equals_term(%Type{} = t) do
-    lambda([t, t], fn x, y ->
-      app(neg_term(), app(equals_term(t), [x, y]))
-    end)
+    x = Declaration.new_free_var("X", t)
+    y = Declaration.new_free_var("Y", t)
+
+    eq =
+      equals_term(t) |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
+
+    neg_term() |> TF.make_appl_term(eq) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -315,4 +333,118 @@ defmodule ShotDs.Hol.Definitions do
   """
   @spec sigma_term(Type.t()) :: Term.term_id()
   def sigma_term(%Type{} = t), do: TF.make_const_term("Σ", Type.new(:o, Type.new(:o, t)))
+
+  @doc """
+  Constructor for Leibniz equality on the given type, which defines equality by
+  stating that both arguments share the same properties. Generates an
+  abstraction which can be applied to two arguments.
+
+  # Examples
+
+      iex> leibniz_equality(type_i(), equivalent_term()) == parse("^[X:$i, Y:$i]: ![P:$i>$o]: P @ X <=> P @ Y")
+      true
+
+      iex> leibniz_equality(type_i(), implied_by_term()) == parse("^[X:$i, Y:$i]: ![P:$i>$o]: P @ X <= P @ Y")
+      true
+  """
+  @spec leibniz_equality(Type.t(), :equiv | :imp | :conv_imp) :: Term.term_id()
+  def leibniz_equality(type, connective \\ :equiv)
+
+  def leibniz_equality(%Type{} = type, :equiv), do: mk_leibniz_equality(type, equivalent_term())
+
+  def leibniz_equality(%Type{} = type, :imp), do: mk_leibniz_equality(type, implies_term())
+
+  def leibniz_equality(%Type{} = type, :conv_imp),
+    do: mk_leibniz_equality(type, implied_by_term())
+
+  defp mk_leibniz_equality(type, connective) do
+    x = Declaration.new_free_var("X", type)
+    y = Declaration.new_free_var("Y", type)
+
+    p_type = Type.new(:o, type)
+    p = Declaration.new_free_var("P", p_type)
+    p_term = TF.make_term(p)
+
+    p_x = TF.make_appl_term(p_term, TF.make_term(x))
+    p_y = TF.make_appl_term(p_term, TF.make_term(y))
+
+    connective
+    |> TF.make_appl_term(p_x)
+    |> TF.make_appl_term(p_y)
+    |> TF.make_abstr_term(p)
+    |> then(&TF.make_appl_term(pi_term(p_type), &1))
+    |> TF.make_abstr_term(y)
+    |> TF.make_abstr_term(x)
+  end
+
+  @doc """
+  Constructor for Andrews equality on the given type, which defines equality by
+  stating that both arguments share all reflexive relations. Generates an
+  abstraction which can be applied to two arguments.
+
+  # Example
+
+      iex> andrews_equality(type_i()) == parse("^[X:$i, Y:$i]: ![Q:$i>$i>$o]: ((![Z:$i]: Q @ Z @ Z) => Q @ X @ Y)")
+      true
+  """
+  @spec andrews_equality(Type.t()) :: Term.term_id()
+  def andrews_equality(%Type{} = type) do
+    x = Declaration.new_free_var("X", type)
+    y = Declaration.new_free_var("Y", type)
+    z = Declaration.new_free_var("Z", type)
+    z_term = TF.make_term(z)
+
+    q_type = Type.new(:o, [type, type])
+    q = Declaration.new_free_var("Q", q_type)
+    q_term = TF.make_term(q)
+
+    lhs =
+      q_term
+      |> TF.make_appl_term(z_term)
+      |> TF.make_appl_term(z_term)
+      |> TF.make_abstr_term(z)
+      |> then(&TF.make_appl_term(pi_term(type), &1))
+
+    rhs = q_term |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
+
+    implies_term()
+    |> TF.make_appl_term(lhs)
+    |> TF.make_appl_term(rhs)
+    |> TF.make_abstr_term(q)
+    |> then(&TF.make_appl_term(pi_term(q_type), &1))
+    |> TF.make_abstr_term(y)
+    |> TF.make_abstr_term(x)
+  end
+
+  @doc """
+  Constructor for extensional equality on the given function type, which
+  defines equality by equality of the extensions. Generates an abstraction
+  which can be applied to two arguments.
+
+  # Example
+
+      iex> extensional_equality(type_ii()) == parse("^[X:$i>i, Y:$i>i]: ![Z:$i]: X @ Z = Y @ Z")
+      true
+  """
+  def extensional_equality(%Type{args: [at | rest_ats]} = type) do
+    x = Declaration.new_free_var("X", type)
+    y = Declaration.new_free_var("Y", type)
+    z = Declaration.new_free_var("Z", at)
+    z_term = TF.make_term(z)
+
+    x_z = TF.make_appl_term(TF.make_term(x), z_term)
+    y_z = TF.make_appl_term(TF.make_term(y), z_term)
+
+    equals_term(%{type | args: rest_ats})
+    |> TF.make_appl_term(x_z)
+    |> TF.make_appl_term(y_z)
+    |> TF.make_abstr_term(z)
+    |> then(&TF.make_appl_term(pi_term(at), &1))
+    |> TF.make_abstr_term(y)
+    |> TF.make_abstr_term(x)
+  end
+
+  def extensional_equality(type) do
+    raise "ArgumentError: type for extensional equality must be a function type. Got #{inspect(type)} instead."
+  end
 end

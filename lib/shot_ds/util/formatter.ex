@@ -33,7 +33,7 @@ defmodule ShotDs.Util.Formatter do
   @spec format_term(Term.term_id() | Term.t(), boolean()) :: String.t()
   def format_term(term_or_id, hide_types \\ false)
 
-  def format_term(term_id, hide_types) when is_binary(term_id) do
+  def format_term(term_id, hide_types) when is_integer(term_id) do
     {final_str, _is_complex} = fold_term(term_id, &build_string(&1, &2, hide_types))
 
     final_str

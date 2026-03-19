@@ -1,4 +1,4 @@
-defmodule ShotDs.Util.FormatterBuilderTraversalTest do
+defmodule ShotDs.Util.FormatterTraversalTest do
   use ShotDs.TermFactoryCase
 
   alias ShotDs.Parser
@@ -44,25 +44,6 @@ defmodule ShotDs.Util.FormatterBuilderTraversalTest do
     assert byte_size(short) > 0
   end
 
-  test "Builder.lambda/2 and app/2 beta-reduce identity" do
-    i = Type.new(:i)
-
-    id_fun = Builder.lambda(i, fn x -> x end)
-    a = TF.make_const_term("a", i)
-
-    assert Builder.app(id_fun, a) == a
-  end
-
-  test "Builder.app/2 with list matches repeated application" do
-    i = Type.new(:i)
-
-    f = TF.make_const_term("f", Type.new(:o, [i, i]))
-    a = TF.make_const_term("a", i)
-    b = TF.make_const_term("b", i)
-
-    assert Builder.app(f, [a, b]) == Builder.app(Builder.app(f, a), b)
-  end
-
   test "TermTraversal.map_term/6 supports short-circuiting" do
     term_id = TF.make_const_term("a", Type.new(:i))
 
@@ -85,14 +66,14 @@ defmodule ShotDs.Util.FormatterBuilderTraversalTest do
 
     x_id =
       TF.memoize(%Term{
-        id: Term.dummy_id(),
+        id: 0,
         head: Declaration.new_const("x", i),
         type: i
       })
 
     root_id =
       TF.memoize(%Term{
-        id: Term.dummy_id(),
+        id: 0,
         head: Declaration.new_const("f", i),
         args: [x_id, x_id],
         type: i

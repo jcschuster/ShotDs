@@ -1,7 +1,7 @@
 defmodule ShotDs.Data.DeclarationContextSubstitutionTest do
   use ExUnit.Case, async: true
 
-  alias ShotDs.Data.{Context, Declaration, Substitution, Term, Type}
+  alias ShotDs.Data.{Context, Declaration, Substitution, Type}
 
   test "declaration constructors create typed free vars, bound vars and constants" do
     i = Type.new(:i)
@@ -65,7 +65,7 @@ defmodule ShotDs.Data.DeclarationContextSubstitutionTest do
 
   test "substitution constructor stores fvar and term id" do
     fvar = Declaration.new_free_var("X", Type.new(:i))
-    term_id = Term.dummy_id()
+    term_id = 0
 
     subst = Substitution.new(fvar, term_id)
 

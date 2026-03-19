@@ -24,7 +24,7 @@ defmodule ShotDs.Data.Substitution do
   replacement term.
   """
   @spec new(Declaration.free_var_t(), Term.term_id()) :: t()
-  def new(%Declaration{kind: :fv} = fvar, term_id) when is_binary(term_id) do
+  def new(%Declaration{kind: :fv} = fvar, term_id) when is_integer(term_id) do
     %__MODULE__{fvar: fvar, term_id: term_id}
   end
 end

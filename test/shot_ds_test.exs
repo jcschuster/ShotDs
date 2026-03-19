@@ -4,13 +4,8 @@ defmodule ShotDsTest do
   alias ShotDs.Data.Context
   alias ShotDs.Parser
   alias ShotDs.Tptp
-  alias ShotDs.Util.{Builder, Formatter}
-
-  test "init/0 delegate forwards to TermFactory.init/0" do
-    assert_raise ArgumentError, fn ->
-      ShotDs.init()
-    end
-  end
+  alias ShotDs.Util.{Formatter}
+  import ShotDs.Hol.Dsl
 
   test "parse delegates to Parser for arities 1 and 2" do
     formula = "$true => $false"
@@ -71,8 +66,8 @@ defmodule ShotDsTest do
     f = ShotDs.make_const_term("f", Type.new(:o, :i))
     x = ShotDs.make_const_term("a", i)
 
-    assert ShotDs.app(f, x) == Builder.app(f, x)
-    assert ShotDs.app(f, [x]) == Builder.app(f, [x])
+    assert ShotDs.app(f, x) == app(f, x)
+    assert ShotDs.app(f, [x]) == app(f, [x])
   end
 
   test "format delegates match Formatter for arities 1 and 2" do

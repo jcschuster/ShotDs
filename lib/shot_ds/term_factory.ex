@@ -18,31 +18,11 @@ defmodule ShotDs.TermFactory do
   alias ShotDs.Data.Declaration
   alias ShotDs.Data.Term
   alias ShotDs.Data.Type
-  import ShotDs.Semantics, only: [make_abstr_term: 2]
+  import ShotDs.Semantics
+  import ShotDs.Util.TermTraversal
 
   @table :term_pool
-
-  @doc group: :"Term Cache"
-  @doc """
-  Initializes a concurrent ETS table to store terms for efficient lookups.
-
-  #### Note {: .warning}
-
-  This function can only be called once! An `ArgumentError` will be raised if
-  it is called again on the same BEAM VM.
-  """
-  @spec init() :: :ok
-  def init do
-    :ets.new(@table, [
-      :set,
-      :public,
-      :named_table,
-      read_concurrency: true,
-      write_concurrency: true
-    ])
-
-    :ok
-  end
+  @dummy_id 0
 
   @doc group: :"Term Cache"
   @doc """
@@ -68,14 +48,17 @@ defmodule ShotDs.TermFactory do
         existing_id
 
       [] ->
-        id = :crypto.hash(:blake2s, :erlang.term_to_binary(signature))
+        new_id = :ets.update_counter(@table, :id_counter, {2, 1})
 
-        term = %Term{draft_term | id: id}
-
-        :ets.insert(@table, {signature, id})
-        :ets.insert(@table, {id, term})
-
-        id
+        if :ets.insert_new(@table, {signature, new_id}) do
+          term = %Term{draft_term | id: new_id}
+          :ets.insert(@table, {new_id, term})
+          new_id
+        else
+          # Another process inserted this signature in between
+          [{^signature, winning_id}] = :ets.lookup(@table, signature)
+          winning_id
+        end
     end
   end
 
@@ -120,7 +103,7 @@ defmodule ShotDs.TermFactory do
 
     case type do
       %Type{args: []} ->
-        %Term{id: Term.dummy_id(), head: decl, type: type, fvars: fvars}
+        %Term{id: @dummy_id, head: decl, type: type, fvars: fvars}
         |> memoize()
 
       %Type{goal: goal_type, args: arg_types} ->
@@ -133,7 +116,7 @@ defmodule ShotDs.TermFactory do
           |> Enum.max(fn -> 0 end)
 
         base_term = %Term{
-          id: Term.dummy_id(),
+          id: @dummy_id,
           head: decl,
           args: new_arg_ids,
           type: Type.new(goal_type),
@@ -189,5 +172,124 @@ defmodule ShotDs.TermFactory do
   @spec make_fresh_const_term(Type.t()) :: Term.term_id()
   def make_fresh_const_term(%Type{} = type) do
     Declaration.fresh_const(type) |> make_term()
+  end
+
+  ##############################################################################
+  # ABSTRACTION & APPLICATION
+  ##############################################################################
+
+  @doc """
+  Abstracts the term corresponding to the given id over the given variable. If
+  the variable is already bound, adds it to the list of bound variables.
+
+  #### Note {: .info}
+
+  Consider using `ShotDs.Hol.Dsl.lambda/2` instead as it is more expressive and
+  robust.
+  """
+  @spec make_abstr_term(Term.term_id(), Declaration.t()) :: Term.term_id()
+  def make_abstr_term(term_id, %Declaration{kind: var_kind, name: var_name, type: var_type} = var) do
+    %Term{bvars: bvars, type: term_type, fvars: fvars, max_num: max_num} =
+      draft_term = get_term(term_id)
+
+    case var_kind do
+      :fv ->
+        bv = Declaration.new_bound_var(max_num + 1, var_type)
+        substituted = if var in fvars, do: bind_var(var, term_id), else: term_id
+        make_abstr_term(substituted, bv)
+
+      :bv ->
+        new_type = Type.new(term_type, var_type)
+        new_max = max(var_name, max_num)
+
+        %Term{draft_term | bvars: [var | bvars], type: new_type, max_num: new_max}
+        |> memoize()
+    end
+  end
+
+  @doc """
+  Applies the term corresponding to `left_id` to the term corresponding to
+  `right_id`.
+
+  #### Note {: .info}
+
+  Consider using `ShotDs.Hol.Dsl.app/2` instead as it is more expressive and
+  robust.
+  """
+  @spec make_appl_term(Term.term_id(), Term.term_id()) :: Term.term_id()
+  def make_appl_term(left_id, right_id) do
+    %Term{} = left_term = get_term(left_id)
+    right_term = get_term(right_id)
+
+    %Type{goal: goal_type, args: [arg1 | rest_types]} = left_term.type
+
+    # This will throw an error if the types are not compatible
+    ^arg1 = get_term(right_id).type
+
+    new_type = Type.new(goal_type, rest_types)
+
+    case left_term.bvars do
+      [] ->
+        new_args = left_term.args ++ [right_id]
+        new_fvars = Enum.uniq(left_term.fvars ++ right_term.fvars)
+        new_max_num = max(left_term.max_num, right_term.max_num)
+
+        %Term{left_term | args: new_args, type: new_type, fvars: new_fvars, max_num: new_max_num}
+        |> memoize()
+
+      [_b | bs] ->
+        body_term = %Term{left_term | bvars: bs, type: new_type, max_num: left_term.max_num - 1}
+        body_id = memoize(body_term)
+        {reduced_id, _cache} = instantiate(body_id, 1, right_id)
+        reduced_id
+    end
+  end
+
+  @doc """
+  Applies the term corresponding to `head_id` to the list of terms
+  corresponding to `arg_ids`.
+  """
+  @spec fold_apply(Term.term_id(), [Term.term_id()]) :: Term.term_id()
+  def fold_apply(head_id, arg_ids) do
+    Enum.reduce(arg_ids, head_id, &make_appl_term(&2, &1))
+  end
+
+  # Binds all occurrences of fvar in the term with id term_id
+  @spec bind_var(Declaration.free_var_t(), Term.term_id()) :: Term.term_id()
+  defp bind_var(%Declaration{kind: :fv} = fvar, term_id) do
+    update_env = fn term, depth -> depth + length(term.bvars) end
+    short_circuit = fn term, _depth -> fvar not in term.fvars end
+
+    transform = fn %Term{head: head, fvars: fvars} = term, new_args, depth, acc_cache ->
+      new_fvars = List.delete(fvars, fvar)
+      new_head = if head == fvar, do: Declaration.new_bound_var(depth + 1, fvar.type), else: head
+
+      new_max_num = calc_new_max_num(new_head, new_args, term.bvars)
+
+      new_term = %Term{
+        term
+        | head: new_head,
+          args: new_args,
+          fvars: new_fvars,
+          max_num: new_max_num
+      }
+
+      {memoize(new_term), acc_cache}
+    end
+
+    {new_id, _cache} = map_term(term_id, 0, update_env, transform, short_circuit)
+    new_id
+  end
+
+  defp calc_new_max_num(head_decl, arg_ids, bvars) do
+    head_max =
+      case head_decl do
+        %Declaration{kind: :bv, name: n} -> n
+        _ -> 0
+      end
+
+    arg_maxes = Enum.map(arg_ids, fn id -> get_term(id).max_num end)
+    bvar_maxes = Enum.map(bvars, & &1.name)
+    Enum.max([head_max | arg_maxes ++ bvar_maxes], fn -> 0 end)
   end
 end

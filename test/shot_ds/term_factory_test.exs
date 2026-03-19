@@ -5,7 +5,7 @@ defmodule ShotDs.TermFactoryTest do
     type = Type.new(:o)
     decl = Declaration.new_const("c", type)
 
-    draft = %Term{id: Term.dummy_id(), head: decl, type: type}
+    draft = %Term{id: 0, head: decl, type: type}
 
     id1 = TF.memoize(draft)
     id2 = TF.memoize(%Term{draft | id: <<1::256>>})
@@ -17,7 +17,7 @@ defmodule ShotDs.TermFactoryTest do
     assert_raise RuntimeError,
                  ~r/Terms should only be constructed via the TermFactory module/,
                  fn ->
-                   TF.get_term(<<255::256>>)
+                   TF.get_term(1_000_000_000_000)
                  end
   end
 

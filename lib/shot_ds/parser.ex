@@ -38,7 +38,6 @@ defmodule ShotDs.Parser do
   alias ShotDs.Data.{Type, Declaration, Term}
   alias ShotDs.Hol.Definitions
   alias ShotDs.TermFactory, as: TF
-  alias ShotDs.Semantics
   alias ShotDs.Data.Context
   alias ShotDs.Util.Lexer
   alias ShotDs.Util.TypeInference, as: TI
@@ -151,7 +150,7 @@ defmodule ShotDs.Parser do
   #############################################################################
 
   defp build_term({:pre_app, f, arg, _type}, subst) do
-    Semantics.make_appl_term(build_term(f, subst), build_term(arg, subst))
+    TF.make_appl_term(build_term(f, subst), build_term(arg, subst))
   end
 
   defp build_term({:pre_abs, name, var_type, body, _type}, subst) do
@@ -160,7 +159,7 @@ defmodule ShotDs.Parser do
 
     # Bottom-up DAG construction
     body_id = build_term(body, subst)
-    Semantics.make_abstr_term(body_id, decl)
+    TF.make_abstr_term(body_id, decl)
   end
 
   defp build_term({:pre_var, name, type}, subst) do

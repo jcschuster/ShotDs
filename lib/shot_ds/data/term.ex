@@ -17,17 +17,14 @@ defmodule ShotDs.Data.Term do
   @enforce_keys [:id, :head, :type]
   defstruct [:id, :head, :type, bvars: [], args: [], fvars: [], max_num: 0]
 
-  @doc """
-  Returns a dummy ID for term construction before memoization.
-
-  #### Warning {: .warning}
-
-  Note that this is not a valid ID and should be used with caution!
+  @typedoc """
+  A term's id is given by an atomic positive integer where 0 denotes a dummy.
   """
-  @spec dummy_id() :: <<_::256>>
-  def dummy_id, do: <<0::256>>
+  @type term_id :: non_neg_integer()
 
-  @type term_id :: <<_::256>>
+  @typedoc """
+  The type of a term. The fields `:id`, `:head` and `:type` are required.
+  """
   @type t :: %__MODULE__{
           id: term_id(),
           bvars: [Declaration.t()],

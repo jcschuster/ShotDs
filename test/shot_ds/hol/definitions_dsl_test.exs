@@ -1,9 +1,9 @@
-defmodule ShotDs.Hol.DefinitionsDslEqualityTest do
+defmodule ShotDs.Hol.DefinitionsDslTest do
   use ShotDs.TermFactoryCase
 
   import ShotDs.Hol.Dsl
 
-  alias ShotDs.Hol.{Definitions, Equality}
+  alias ShotDs.Hol.{Definitions}
 
   test "Definitions exposes canonical Hol helper types" do
     assert Definitions.type_o() == Type.new(:o)
@@ -73,12 +73,12 @@ defmodule ShotDs.Hol.DefinitionsDslEqualityTest do
     assert Formatter.format_term(multi) |> String.contains?("Σ")
   end
 
-  test "Equality.leibniz_equality/2 builds lambda terms with expected connective" do
+  test "Definitions.leibniz_equality/2 builds lambda terms with expected connective" do
     i = Type.new(:i)
 
-    eqv = Equality.leibniz_equality(i)
-    imp = Equality.leibniz_equality(i, :imp)
-    conv_imp = Equality.leibniz_equality(i, :conv_imp)
+    eqv = Definitions.leibniz_equality(i)
+    imp = Definitions.leibniz_equality(i, :imp)
+    conv_imp = Definitions.leibniz_equality(i, :conv_imp)
 
     assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}, %Type{goal: :i}]}} =
              TF.get_term(eqv)
@@ -94,9 +94,9 @@ defmodule ShotDs.Hol.DefinitionsDslEqualityTest do
     assert Formatter.format_term(conv_imp) |> String.contains?("⊃")
   end
 
-  test "Equality.andrews_equality/1 constructs reflexive equality" do
+  test "Definitions.andrews_equality/1 constructs reflexive equality" do
     i = Type.new(:i)
-    andrews_eq = Equality.andrews_equality(i)
+    andrews_eq = Definitions.andrews_equality(i)
 
     assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}, %Type{goal: :i}]}} =
              TF.get_term(andrews_eq)
@@ -106,9 +106,9 @@ defmodule ShotDs.Hol.DefinitionsDslEqualityTest do
     assert String.contains?(rendered, "Π")
   end
 
-  test "Equality.extensional_equality/1 constructs function equality" do
+  test "Definitions.extensional_equality/1 constructs function equality" do
     ii = Type.new(:i, :i)
-    ext_eq = Equality.extensional_equality(ii)
+    ext_eq = Definitions.extensional_equality(ii)
 
     assert %Term{type: %Type{goal: :o, args: [^ii, ^ii]}} = TF.get_term(ext_eq)
 
@@ -117,9 +117,9 @@ defmodule ShotDs.Hol.DefinitionsDslEqualityTest do
     assert String.contains?(rendered, "=")
   end
 
-  test "Equality.extensional_equality/1 raises for non-function types" do
+  test "Definitions.extensional_equality/1 raises for non-function types" do
     assert_raise RuntimeError, ~r/must be a function type/, fn ->
-      Equality.extensional_equality(Type.new(:i))
+      Definitions.extensional_equality(Type.new(:i))
     end
   end
 
@@ -208,7 +208,7 @@ defmodule ShotDs.Hol.DefinitionsDslEqualityTest do
   end
 
   test "String.Chars protocol for lambda terms" do
-    lambda_id = Builder.lambda(Type.new(:i), fn x -> x end)
+    lambda_id = lambda(Type.new(:i), fn x -> x end)
 
     str = to_string(TF.get_term(lambda_id))
     assert is_binary(str)
@@ -218,7 +218,7 @@ defmodule ShotDs.Hol.DefinitionsDslEqualityTest do
   test "String.Chars protocol for application terms" do
     f = TF.make_const_term("f", Type.new(:o, :i))
     x = TF.make_const_term("a", Type.new(:i))
-    app = Semantics.make_appl_term(f, x)
+    app = TF.make_appl_term(f, x)
 
     str = to_string(TF.get_term(app))
     assert is_binary(str)
