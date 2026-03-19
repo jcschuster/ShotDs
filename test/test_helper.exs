@@ -30,4 +30,3 @@ defmodule ShotDs.TermFactoryCase do
     :ok
   end
 end
-

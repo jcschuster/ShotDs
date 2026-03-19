@@ -119,4 +119,3 @@ defmodule ShotDs.Util.FormatterBuilderTraversalTest do
     assert node_count == 3
   end
 end
-

@@ -36,4 +36,3 @@ defmodule ShotDs.Data.TypeTest do
     assert String.ends_with?(rendered, "]")
   end
 end
-

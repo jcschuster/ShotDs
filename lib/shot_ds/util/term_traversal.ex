@@ -99,4 +99,3 @@ defmodule ShotDs.Util.TermTraversal do
     fold_fn.(term, folded_args)
   end
 end
-

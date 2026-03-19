@@ -77,4 +77,3 @@ defmodule ShotDs.Data.Context do
     Map.get(ctx.vars, name) || Map.get(ctx.consts, name)
   end
 end
-

@@ -69,10 +69,10 @@ defmodule ShotDs.Data.Type do
   @doc """
   Checks whether the given type or type identifier is a type variable.
   """
-  @spec is_type_var(t() | type_id()) :: boolean()
-  def is_type_var(%__MODULE__{goal: g, args: []}) when is_reference(g), do: true
-  def is_type_var(type) when is_reference(type), do: true
-  def is_type_var(_), do: false
+  @spec type_var?(t() | type_id()) :: boolean()
+  def type_var?(%__MODULE__{goal: g, args: []}) when is_reference(g), do: true
+  def type_var?(type) when is_reference(type), do: true
+  def type_var?(_), do: false
 
   defp normalize_args(args) do
     args

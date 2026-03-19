@@ -132,4 +132,3 @@ defmodule ShotDs.SemanticsTest do
     assert %Term{head: %Declaration{kind: :bv, name: 1}, max_num: 1} = TF.get_term(decremented_id)
   end
 end
-

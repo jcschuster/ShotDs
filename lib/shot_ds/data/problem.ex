@@ -51,4 +51,3 @@ defmodule ShotDs.Data.Problem do
           conjecture: {String.t(), Term.t()} | nil
         }
 end
-

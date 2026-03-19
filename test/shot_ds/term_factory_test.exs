@@ -51,4 +51,3 @@ defmodule ShotDs.TermFactoryTest do
     assert %Term{bvars: [], args: [], type: %Type{goal: :i}} = TF.get_term(id)
   end
 end
-

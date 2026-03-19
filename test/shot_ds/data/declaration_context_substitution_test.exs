@@ -73,4 +73,3 @@ defmodule ShotDs.Data.DeclarationContextSubstitutionTest do
     assert subst.term_id == term_id
   end
 end
-

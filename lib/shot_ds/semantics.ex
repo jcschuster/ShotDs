@@ -1,4 +1,11 @@
 defmodule ShotDs.Semantics do
+  @moduledoc """
+  Implements the semantics of Church's simple type theory.
+
+  The most important functions are `subst/2`, `make_abstr_term/2` and
+  `make_appl_term/2` which handle memoization and beta-eta normalization.
+  """
+
   alias ShotDs.Data.{Type, Declaration, Term, Substitution}
   alias ShotDs.TermFactory, as: TF
   import ShotDs.Util.TermTraversal
@@ -8,8 +15,8 @@ defmodule ShotDs.Semantics do
   ##############################################################################
 
   @doc """
-  Applies a singular substitution or a list of substitutions to the term with
-  the given id.
+  Applies a singular substitution or a list of substitutions left to right to
+  the term with the given id.
   """
   @spec subst([Substitution.t()] | Substitution.t(), Term.term_id()) :: Term.term_id()
   def subst(substitutions, term_id)

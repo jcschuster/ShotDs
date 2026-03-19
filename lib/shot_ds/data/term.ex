@@ -52,4 +52,3 @@ defimpl String.Chars, for: ShotDs.Data.Term do
     end
   end
 end
-

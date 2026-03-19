@@ -91,7 +91,7 @@ defmodule ShotDs.Parser do
     resolved_root = TI.apply_subst(root_type, substitutions)
 
     final_ctx =
-      if Type.is_type_var(resolved_root) do
+      if Type.type_var?(resolved_root) do
         Context.add_constraint(almost_final_ctx, resolved_root, Definitions.type_o())
       else
         almost_final_ctx

@@ -123,4 +123,3 @@ defmodule ShotDs.Util.Lexer do
     )
   )
 end
-

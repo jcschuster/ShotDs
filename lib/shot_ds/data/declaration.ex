@@ -105,4 +105,3 @@ end
 defimpl String.Chars, for: ShotDs.Data.Declaration do
   def to_string(decl), do: ShotDs.Data.Declaration.format(decl, true)
 end
-

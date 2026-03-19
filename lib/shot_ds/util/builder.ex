@@ -1,4 +1,9 @@
 defmodule ShotDs.Util.Builder do
+  @moduledoc """
+  Contains expressive functions as shorthand notation for the construction of
+  abstractions and applications.
+  """
+
   alias ShotDs.Data.{Type, Declaration, Term}
   alias ShotDs.TermFactory, as: TF
   alias ShotDs.Semantics

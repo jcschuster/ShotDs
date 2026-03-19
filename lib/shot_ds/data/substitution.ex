@@ -28,4 +28,3 @@ defmodule ShotDs.Data.Substitution do
     %__MODULE__{fvar: fvar, term_id: term_id}
   end
 end
-
