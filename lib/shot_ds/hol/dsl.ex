@@ -14,7 +14,7 @@ defmodule ShotDs.Hol.Dsl do
   > `(a ~> b) ~> c`.
 
   > #### Warning {: .warning}
-
+  >
   > The operator `&&&` and `|||` will clash with the operators defined in the
   > `Bitwise` module. Consider hiding these definitions when importing
   > `Bitwise`.
