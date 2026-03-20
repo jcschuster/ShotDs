@@ -1,9 +1,7 @@
 defmodule ShotDs.Util.TypeInference do
-  @moduledoc """
-  Contains functionality for type inference given a set of type constraints.
-
-  Utilizes Robinson's unification algorithm for type unification.
-  """
+  @moduledoc false
+  # Contains functionality for type inference given a set of type constraints.
+  # Utilizes Robinson's unification algorithm for type unification.
 
   alias ShotDs.Data.Type
 
