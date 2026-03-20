@@ -8,15 +8,16 @@ defmodule ShotDs.Hol.Dsl do
                      &&&        [Conjunction]
         (Lowest)     |||        [Disjunction]
 
-  #### Note {: .info}
+  > #### Note {: .info}
+  >
+  > All operators are left-associative, so `a ~> b ~> c` parses as
+  > `(a ~> b) ~> c`.
 
-  All operators are left-associative, so `a ~> b ~> c` parses as
-  `(a ~> b) ~> c`.
+  > #### Warning {: .warning}
 
-  #### Warning {: .warning}
-
-  The operator `&&&` and `|||` will clash with the operators defined in the
-  `Bitwise` module. Consider hiding these definitions when importing `Bitwise`.
+  > The operator `&&&` and `|||` will clash with the operators defined in the
+  > `Bitwise` module. Consider hiding these definitions when importing
+  > `Bitwise`.
   """
 
   import ShotDs.Hol.Definitions,

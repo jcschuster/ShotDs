@@ -79,11 +79,11 @@ defmodule ShotDs.Util.TermTraversal do
   This combinator visits the leaves of the term graph first, applies the
   `fold_fn`, and propagates the computed result up to the parent terms.
 
-  #### Note {: .info}
-
-  Unlike `map_term`, this basic fold does not implement DAG caching out of the
-  box, so it will traverse shared subterms multiple times. It is best suited
-  for lightweight reduction or formatting tasks.
+  > #### Note {: .info}
+  >
+  > Unlike `map_term`, this basic fold does not implement DAG caching out of
+  > the box, so it will traverse shared subterms multiple times. It is best
+  > suited for lightweight reduction or formatting tasks.
 
   ## Parameters
 

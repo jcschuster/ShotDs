@@ -2,8 +2,8 @@ defmodule ShotDs.Data.Term do
   @moduledoc """
   Represents a Hol term as directed acyclic graph (DAG).
 
-  All terms contain a deterministic ID assigned by `ShotDs.Stt.TermFactory`. Note
-  that terms are in βη-normal form, i.e., fully β-reduced and η-expanded.
+  All terms contain a deterministic ID assigned by `ShotDs.Stt.TermFactory`.
+  Note that terms are in βη-normal form, i.e., fully β-reduced and η-expanded.
 
   Besides the obvious fields `:head`, `:args` and `:type`, two accessor fields
   are implemented for efficiency: `:fvars` contains all free variables

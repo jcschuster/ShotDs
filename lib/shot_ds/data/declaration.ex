@@ -95,8 +95,11 @@ defmodule ShotDs.Data.Declaration do
     prefix <> format_name(name) <> suffix
   end
 
-  defp format_name(ref) when is_reference(ref), do: "[#{ShotDs.Util.Formatter.short_ref(ref)}]"
-  defp format_name(name) when is_binary(name) or is_integer(name), do: Kernel.to_string(name)
+  defp format_name(ref) when is_reference(ref),
+    do: "[#{ShotDs.Util.Formatter.short_ref(ref)}]"
+
+  defp format_name(name) when is_binary(name) or is_integer(name),
+    do: Kernel.to_string(name)
 
   defp kind_prefix(:fv), do: "V"
   defp kind_prefix(:co), do: "C"

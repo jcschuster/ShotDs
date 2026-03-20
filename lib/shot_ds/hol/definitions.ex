@@ -165,7 +165,8 @@ defmodule ShotDs.Hol.Definitions do
   Constant representing equality over instances of the given type.
   """
   @spec equals_const(Type.t()) :: Declaration.const_t()
-  def equals_const(%Type{} = t), do: Declaration.new_const("=", Type.new(:o, [t, t]))
+  def equals_const(%Type{} = t),
+    do: Declaration.new_const("=", Type.new(:o, [t, t]))
 
   @doc group: :Constants
   @doc """
@@ -173,7 +174,8 @@ defmodule ShotDs.Hol.Definitions do
   given element type.
   """
   @spec pi_const(Type.t()) :: Declaration.const_t()
-  def pi_const(%Type{} = t), do: Declaration.new_const("Π", Type.new(:o, Type.new(:o, t)))
+  def pi_const(%Type{} = t),
+    do: Declaration.new_const("Π", Type.new(:o, Type.new(:o, t)))
 
   @doc group: :Constants
   @doc """
@@ -181,7 +183,8 @@ defmodule ShotDs.Hol.Definitions do
   the given element type.
   """
   @spec sigma_const(Type.t()) :: Declaration.const_t()
-  def sigma_const(%Type{} = t), do: Declaration.new_const("Σ", Type.new(:o, Type.new(:o, t)))
+  def sigma_const(%Type{} = t),
+    do: Declaration.new_const("Σ", Type.new(:o, Type.new(:o, t)))
 
   #############################################################################
   # TERMS
@@ -244,8 +247,12 @@ defmodule ShotDs.Hol.Definitions do
     x = Declaration.new_free_var("X", type_o())
     y = Declaration.new_free_var("Y", type_o())
 
-    conj = and_term() |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
-    neg_term() |> TF.make_appl_term(conj) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
+    and_term()
+    |> TF.make_appl_term(TF.make_term(x))
+    |> TF.make_appl_term(TF.make_term(y))
+    |> then(&TF.make_appl_term(neg_term(), &1))
+    |> TF.make_abstr_term(y)
+    |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -287,12 +294,12 @@ defmodule ShotDs.Hol.Definitions do
     x = Declaration.new_free_var("X", type_o())
     y = Declaration.new_free_var("Y", type_o())
 
-    equiv =
-      equivalent_term()
-      |> TF.make_appl_term(TF.make_term(x))
-      |> TF.make_appl_term(TF.make_term(y))
-
-    neg_term() |> TF.make_appl_term(equiv) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
+    equivalent_term()
+    |> TF.make_appl_term(TF.make_term(x))
+    |> TF.make_appl_term(TF.make_term(y))
+    |> then(&TF.make_appl_term(neg_term(), &1))
+    |> TF.make_abstr_term(y)
+    |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -300,7 +307,8 @@ defmodule ShotDs.Hol.Definitions do
   Term representing equality over instances of the given type.
   """
   @spec equals_term(Type.t()) :: Term.term_id()
-  def equals_term(%Type{} = t), do: TF.make_const_term("=", Type.new(:o, [t, t]))
+  def equals_term(%Type{} = t),
+    do: TF.make_const_term("=", Type.new(:o, [t, t]))
 
   @doc group: :Terms
   @doc """
@@ -312,10 +320,12 @@ defmodule ShotDs.Hol.Definitions do
     x = Declaration.new_free_var("X", t)
     y = Declaration.new_free_var("Y", t)
 
-    eq =
-      equals_term(t) |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
-
-    neg_term() |> TF.make_appl_term(eq) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
+    equals_term(t)
+    |> TF.make_appl_term(TF.make_term(x))
+    |> TF.make_appl_term(TF.make_term(y))
+    |> then(&TF.make_appl_term(neg_term(), &1))
+    |> TF.make_abstr_term(y)
+    |> TF.make_abstr_term(x)
   end
 
   @doc group: :Terms
@@ -324,7 +334,8 @@ defmodule ShotDs.Hol.Definitions do
   given element type.
   """
   @spec pi_term(Type.t()) :: Term.term_id()
-  def pi_term(%Type{} = t), do: TF.make_const_term("Π", Type.new(:o, Type.new(:o, t)))
+  def pi_term(%Type{} = t),
+    do: TF.make_const_term("Π", Type.new(:o, Type.new(:o, t)))
 
   @doc group: :Terms
   @doc """
@@ -332,7 +343,8 @@ defmodule ShotDs.Hol.Definitions do
   the given element type.
   """
   @spec sigma_term(Type.t()) :: Term.term_id()
-  def sigma_term(%Type{} = t), do: TF.make_const_term("Σ", Type.new(:o, Type.new(:o, t)))
+  def sigma_term(%Type{} = t),
+    do: TF.make_const_term("Σ", Type.new(:o, Type.new(:o, t)))
 
   @doc """
   Constructor for Leibniz equality on the given type, which defines equality by
@@ -350,9 +362,11 @@ defmodule ShotDs.Hol.Definitions do
   @spec leibniz_equality(Type.t(), :equiv | :imp | :conv_imp) :: Term.term_id()
   def leibniz_equality(type, connective \\ :equiv)
 
-  def leibniz_equality(%Type{} = type, :equiv), do: mk_leibniz_equality(type, equivalent_term())
+  def leibniz_equality(%Type{} = type, :equiv),
+    do: mk_leibniz_equality(type, equivalent_term())
 
-  def leibniz_equality(%Type{} = type, :imp), do: mk_leibniz_equality(type, implies_term())
+  def leibniz_equality(%Type{} = type, :imp),
+    do: mk_leibniz_equality(type, implies_term())
 
   def leibniz_equality(%Type{} = type, :conv_imp),
     do: mk_leibniz_equality(type, implied_by_term())
@@ -405,7 +419,10 @@ defmodule ShotDs.Hol.Definitions do
       |> TF.make_abstr_term(z)
       |> then(&TF.make_appl_term(pi_term(type), &1))
 
-    rhs = q_term |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
+    rhs =
+      q_term
+      |> TF.make_appl_term(TF.make_term(x))
+      |> TF.make_appl_term(TF.make_term(y))
 
     implies_term()
     |> TF.make_appl_term(lhs)

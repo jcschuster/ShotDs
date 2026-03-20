@@ -13,10 +13,10 @@ defmodule ShotDs.Stt.TermFactory do
   immutability ensures pointers to the terms being static, i.e., a term can not
   be altered once it is memoized.
 
-  #### Note {: .info}
-
-  Consider using the more expressive API defined in `ShotDs.Hol.Dsl` ontop of
-  this module.
+  > #### Note {: .info}
+  >
+  > Consider using the more expressive API defined in `ShotDs.Hol.Dsl` ontop of
+  > this module.
   """
 
   alias ShotDs.Data.Declaration
