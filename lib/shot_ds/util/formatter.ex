@@ -24,6 +24,7 @@ defmodule ShotDs.Util.Formatter do
   def format(%Type{} = t, false), do: Kernel.to_string(t)
   def format(%Declaration{} = d, hide_types), do: Declaration.format(d, hide_types)
   def format(%Term{} = t, hide_types), do: format_term(t, hide_types)
+  def format(term_id, hide_types) when is_integer(term_id), do: format_term(term_id, hide_types)
   def format(%Substitution{} = s, hide_types), do: format_substitution(s, hide_types)
 
   @doc """

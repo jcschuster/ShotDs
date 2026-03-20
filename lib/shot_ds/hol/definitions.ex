@@ -4,11 +4,11 @@ defmodule ShotDs.Hol.Definitions do
 
   This module implements the following propositional constants:
 
-      ⊤::o, ⊥::o, ¬::o->o, ∨::o->o->o, ∧::o->o->o, ⊃::o->o->o, ≡::o->o->o
+  `⊤::o, ⊥::o, ¬::o->o, ∨::o->o->o, ∧::o->o->o, ⊃::o->o->o, ≡::o->o->o`
 
   Additionally, the following polymorphic higher-order constants:
 
-      =::t->t->o, Π::(t->o)->o, Σ::(t->o)->o
+  `=::t->t->o, Π::(t->o)->o, Σ::(t->o)->o`
   """
 
   alias ShotDs.Data.{Type, Declaration, Term}

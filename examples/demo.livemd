@@ -1,0 +1,22 @@
+# Demo of the ShotDs Package
+
+```elixir
+Mix.install([
+  shot_ds: [github: "jcschuster/ShotDs"]
+])
+```
+
+## Setup
+
+```elixir
+alias ShotDs.TermFactory, as: TF
+import ShotDs.Hol.Dsl
+import ShotDs.Hol.Definitions
+import ShotDs.Util.Formatter
+```
+
+## Term Construction
+
+```elixir
+(true_term() ||| false_term()) |> format
+```

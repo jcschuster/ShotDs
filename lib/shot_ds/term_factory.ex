@@ -12,6 +12,11 @@ defmodule ShotDs.TermFactory do
   ensure that a specific term is created exactly once. Furthermore, Elixir's
   immutability ensures pointers to the terms being static, i.e., a term can not
   be altered once it is memoized.
+
+  #### Note {: .info}
+
+  Consider using the more expressive API defined in `ShotDs.Hol.Dsl` ontop of
+  this module.
   """
 
   alias ShotDs.Data.Declaration
@@ -176,6 +181,7 @@ defmodule ShotDs.TermFactory do
   # ABSTRACTION & APPLICATION
   ##############################################################################
 
+  @doc group: :"Term Construction API"
   @doc """
   Abstracts the term corresponding to the given id over the given variable. If
   the variable is already bound, adds it to the list of bound variables.
@@ -205,6 +211,7 @@ defmodule ShotDs.TermFactory do
     end
   end
 
+  @doc group: :"Term Construction API"
   @doc """
   Applies the term corresponding to `left_id` to the term corresponding to
   `right_id`.
@@ -243,9 +250,10 @@ defmodule ShotDs.TermFactory do
     end
   end
 
+  @doc group: :"Term Construction API"
   @doc """
   Applies the term corresponding to `head_id` to the list of terms
-  corresponding to `arg_ids`.
+  corresponding to `arg_ids`, folding left to right.
   """
   @spec fold_apply(Term.term_id(), [Term.term_id()]) :: Term.term_id()
   def fold_apply(head_id, arg_ids) do

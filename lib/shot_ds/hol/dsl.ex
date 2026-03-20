@@ -1,8 +1,8 @@
 defmodule ShotDs.Hol.Dsl do
   @moduledoc """
-  Introduces a domain specific language (Dsl) for constructing Hol terms.
+  Introduces a domain specific language (DSL) for constructing HOL terms.
 
-  The Dsl utilizes unused Elixir operators with the following precedence:
+  The DSL utilizes unused Elixir operators with the following precedence:
 
         (Highest)    ~>, <~>    [Implication, Equivalence]
                      &&&        [Conjunction]
