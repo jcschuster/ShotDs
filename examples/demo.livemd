@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  shot_ds: [github: "jcschuster/ShotDs"]
+  {:shot_ds, path: Path.join(__DIR__, "..")}
 ])
 ```
 
@@ -15,12 +15,8 @@ import ShotDs.Hol.Definitions
 import ShotDs.Util.Formatter
 ```
 
-```elixir
-true_term()
-```
-
 ## Term Construction
 
 ```elixir
-(true_term() ||| false_term()) |> format_term
+(true_term() ||| false_term()) |> format_term(true)
 ```

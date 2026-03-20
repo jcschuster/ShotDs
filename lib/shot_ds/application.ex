@@ -4,18 +4,10 @@ defmodule ShotDs.Application do
 
   @impl true
   def start(_type, _args) do
-    :ets.new(:term_pool, [
-      :set,
-      :public,
-      :named_table,
-      read_concurrency: true,
-      write_concurrency: true
-    ])
+    children = [
+      ShotDs.TermPoolOwner
+    ]
 
-    # The first value returned by :ets.update_counter/3 will be 1
-    :ets.insert(:term_pool, {:id_counter, 0})
-
-    children = []
     opts = [strategy: :one_for_one, name: ShotDs.Supervisor]
     Supervisor.start_link(children, opts)
   end
