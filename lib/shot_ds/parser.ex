@@ -2,8 +2,8 @@ defmodule ShotDs.Parser do
   @moduledoc """
   Contains functionality to parse a formula in TH0 syntax with full type
   inference. The algorithm is similar to Hindley-Milner type systems but for
-  simplicity reasons without the optimizations found in algorithms J or W. The
-  type unification algorithm is documented in `ShotDs.Util.TypeInference`). A
+  simplicity reasons without the optimizations found in algorithms J or W.
+  Uses Robinson's first-order unification algorithm for type inference. A
   context can be specified to clear up unknown types. If terms still have
   unknown type after parsing, unifies their type with type o. The main entry
   point is the `parse/2` function.
