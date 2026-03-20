@@ -32,7 +32,7 @@ defmodule ShotDs.Hol.Dsl do
     ]
 
   alias ShotDs.Data.{Type, Declaration, Term}
-  alias ShotDs.TermFactory, as: TF
+  alias ShotDs.Stt.TermFactory, as: TF
 
   @doc "Logical Negation"
   @spec neg(Term.term_id()) :: Term.term_id()

@@ -12,7 +12,7 @@ defmodule ShotDs.Hol.Definitions do
   """
 
   alias ShotDs.Data.{Type, Declaration, Term}
-  alias ShotDs.TermFactory, as: TF
+  alias ShotDs.Stt.TermFactory, as: TF
 
   #############################################################################
   # TYPES

@@ -10,8 +10,8 @@ defmodule ShotDs.TermFactoryCase do
 
       alias ShotDs.Data.{Context, Declaration, Substitution, Term, Type}
       alias ShotDs.Hol.Definitions
-      alias ShotDs.Semantics
-      alias ShotDs.TermFactory, as: TF
+      alias ShotDs.Stt.Semantics
+      alias ShotDs.Stt.TermFactory, as: TF
       alias ShotDs.Util.{Formatter, Lexer, TypeInference}
     end
   end

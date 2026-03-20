@@ -37,7 +37,7 @@ defmodule ShotDs.Parser do
 
   alias ShotDs.Data.{Type, Declaration, Term}
   alias ShotDs.Hol.Definitions
-  alias ShotDs.TermFactory, as: TF
+  alias ShotDs.Stt.TermFactory, as: TF
   alias ShotDs.Data.Context
   alias ShotDs.Util.Lexer
   alias ShotDs.Util.TypeInference, as: TI

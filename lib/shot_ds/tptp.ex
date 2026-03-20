@@ -10,7 +10,7 @@ defmodule ShotDs.Tptp do
   alias ShotDs.Data.{Context, Problem, Declaration}
   alias ShotDs.Parser
   alias ShotDs.Util.Lexer
-  alias ShotDs.TermFactory, as: TF
+  alias ShotDs.Stt.TermFactory, as: TF
 
   @doc """
   Parses a TPTP file in TH0 syntax at the provided path into a

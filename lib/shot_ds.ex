@@ -5,7 +5,7 @@ defmodule ShotDs do
   """
 
   alias ShotDs.Data.{Context, Declaration, Problem, Substitution, Term, Type}
-  alias ShotDs.TermFactory, as: TF
+  alias ShotDs.Stt.TermFactory, as: TF
   alias ShotDs.Parser
   alias ShotDs.Tptp
   alias ShotDs.Hol.Dsl
@@ -100,9 +100,9 @@ defmodule ShotDs do
   Basic construction of a free variable with the corresponding name and type
   and returns the ID for its term representation. While unique variables can be
   created by giving an Erlang reference as name, it is recommended to use
-  `ShotDs.TermFactory.make_fresh_var_term/1` instead for that purpose.
+  `ShotDs.Stt.TermFactory.make_fresh_var_term/1` instead for that purpose.
 
-  Delegates the function call to `ShotDs.TermFactory.make_free_var_term/2`.
+  Delegates the function call to `ShotDs.Stt.TermFactory.make_free_var_term/2`.
 
   ## Example:
 
@@ -116,9 +116,9 @@ defmodule ShotDs do
   Basic construction of a constant with the corresponding name and type and
   returns the ID for its term representation. While unique constants can be
   created by giving an Erlang reference as name, it is recommended to use
-  `ShotDs.TermFactory.make_fresh_const_term/1` instead for that purpose.
+  `ShotDs.Stt.TermFactory.make_fresh_const_term/1` instead for that purpose.
 
-  Delegates the function call to `ShotDs.TermFactory.make_const_term/2`.
+  Delegates the function call to `ShotDs.Stt.TermFactory.make_const_term/2`.
 
   ## Example:
 

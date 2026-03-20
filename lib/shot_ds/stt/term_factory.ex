@@ -1,4 +1,4 @@
-defmodule ShotDs.TermFactory do
+defmodule ShotDs.Stt.TermFactory do
   @moduledoc groups: [:"Term Cache", :"Term Construction API"]
   @moduledoc """
   Contains functionality of creating, memoizing and accessing terms using an
@@ -22,7 +22,7 @@ defmodule ShotDs.TermFactory do
   alias ShotDs.Data.Declaration
   alias ShotDs.Data.Term
   alias ShotDs.Data.Type
-  import ShotDs.Semantics
+  import ShotDs.Stt.Semantics
   import ShotDs.Util.TermTraversal
 
   @table :term_pool
@@ -39,7 +39,7 @@ defmodule ShotDs.TermFactory do
   ## Example:
 
       iex> id = memoize(t)
-      iex> {t | id: id} == get_term(id)
+      iex> %{t | id: id} == get_term(id)
       true
   """
   @spec memoize(Term.t()) :: Term.term_id()

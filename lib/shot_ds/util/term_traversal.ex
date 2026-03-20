@@ -3,7 +3,7 @@ defmodule ShotDs.Util.TermTraversal do
   Utilities for efficiently traversing and transforming Hol term DAGs.
   """
   alias ShotDs.Data.Term
-  alias ShotDs.TermFactory, as: TF
+  alias ShotDs.Stt.TermFactory, as: TF
 
   @doc """
   A bottom-up map combinator on term DAGs for transforming term DAGs with

@@ -1,11 +1,11 @@
-defmodule ShotDs.Semantics do
+defmodule ShotDs.Stt.Semantics do
   @moduledoc """
   Implements the semantics of Church's simple type theory. The most important
   function is `subst/2`, which applies substitutions to a given term.
   """
 
   alias ShotDs.Data.{Declaration, Term, Substitution}
-  alias ShotDs.TermFactory, as: TF
+  alias ShotDs.Stt.TermFactory, as: TF
   import ShotDs.Util.TermTraversal
 
   ##############################################################################
