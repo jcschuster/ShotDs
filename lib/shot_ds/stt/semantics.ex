@@ -4,7 +4,7 @@ defmodule ShotDs.Stt.Semantics do
   function is `subst/2`, which applies substitutions to a given term.
   """
 
-  alias ShotDs.Data.{Declaration, Term, Substitution}
+  alias ShotDs.Data.{Type, Declaration, Term, Substitution}
   alias ShotDs.Stt.TermFactory, as: TF
   import ShotDs.Util.TermTraversal
 
@@ -40,6 +40,7 @@ defmodule ShotDs.Stt.Semantics do
 
         combined_bvars = bvars ++ red_bvars
         final_fvars = Enum.uniq(List.delete(fvars, fvar) ++ red_fvars)
+        new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
 
         new_max_num = calc_new_max_num(reduced_body.head, reduced_body.args, combined_bvars)
 
@@ -47,6 +48,7 @@ defmodule ShotDs.Stt.Semantics do
           reduced_body
           | bvars: combined_bvars,
             fvars: final_fvars,
+            type: new_type,
             max_num: new_max_num
         }
 

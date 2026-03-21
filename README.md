@@ -9,6 +9,10 @@ This library adapts the original formulation of the data structures from the
 library [HOL](https://hexdocs.pm/hol/readme.html) and the parsing algorithm
 from [BeHOLd](https://hexdocs.pm/behold/BeHOLd.html).
 
+This package was developed at the
+[University of Bamberg](https://www.uni-bamberg.de/en/) with the
+[Chair for AI Systems Engineering](https://www.uni-bamberg.de/en/aise/).
+
 ## Classical HOL
 
 Classical HOL is an extension of Church's simple type theory (STT) and concerns
@@ -111,7 +115,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 0.1.1"}
+    {:shot_ds, "~> 0.1.2"}
   ]
 end
 ```
