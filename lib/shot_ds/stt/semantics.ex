@@ -135,11 +135,18 @@ defmodule ShotDs.Stt.Semantics do
 
         %Term{bvars: red_bvars, max_num: red_max} = reduced_body = TF.get_term(reduced_body_id)
         combined_bvars = bvars ++ red_bvars
+        new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
 
         bvar_maxes = Enum.map(combined_bvars, & &1.name)
         new_max_num = Enum.max([red_max | bvar_maxes], fn -> 0 end)
 
-        wrapped_term = %Term{reduced_body | bvars: combined_bvars, max_num: new_max_num}
+        wrapped_term = %Term{
+          reduced_body
+          | bvars: combined_bvars,
+            type: new_type,
+            max_num: new_max_num
+        }
+
         {TF.memoize(wrapped_term), acc_cache}
 
       %Term{head: %Declaration{kind: :bv, name: index, type: type}, bvars: bvars} = term,
