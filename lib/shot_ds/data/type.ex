@@ -57,7 +57,7 @@ defmodule ShotDs.Data.Type do
   end
 
   def new(%__MODULE__{goal: goal, args: args1}, args2) do
-    %__MODULE__{goal: goal, args: args1 ++ normalize_args(args2)}
+    %__MODULE__{goal: goal, args: normalize_args(args2) ++ args1}
   end
 
   @doc """

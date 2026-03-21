@@ -157,7 +157,7 @@ defmodule ShotDs.ParserEdgeCasesTest do
     {type, []} = Parser.parse_type_tokens(tokens)
 
     # Type parsing normalizes args to a flattened list
-    assert %Type{goal: :i, args: [%Type{goal: :o}, %Type{goal: :i}]} = type
+    assert %Type{goal: :i, args: [%Type{goal: :i}, %Type{goal: :o}]} = type
   end
 
   test "parse_type_tokens/1 with single arrow" do

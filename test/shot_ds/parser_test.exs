@@ -4,8 +4,8 @@ defmodule ShotDs.ParserTest do
   alias ShotDs.Parser
 
   test "parse_type/1 parses right-associative function types" do
-    assert Parser.parse_type("$o>$i>$o") == Type.new(:o, [:i, :o])
-    assert to_string(Parser.parse_type("$o>$i>$o")) == "i>o>o"
+    assert Parser.parse_type("$o>$i>$o") == Type.new(:o, [:o, :i])
+    assert to_string(Parser.parse_type("$o>$i>$o")) == "o>i>o"
   end
 
   test "parse_type_tokens/1 parses parenthesized type expressions" do

@@ -13,7 +13,7 @@ defmodule ShotDs.Data.TypeTest do
     base = Type.new(:o, :i)
     extended = Type.new(base, :o)
 
-    assert to_string(extended) == "i>o>o"
+    assert to_string(extended) == "o>i>o"
   end
 
   test "fresh_type_var/0 returns a type variable with no args" do

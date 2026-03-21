@@ -13,10 +13,37 @@ alias ShotDs.Stt.TermFactory, as: TF
 import ShotDs.Hol.Dsl
 import ShotDs.Hol.Definitions
 import ShotDs.Util.Formatter
+alias ShotDs.Data.{Type, Declaration, Term}
 ```
 
 ## Term Construction
 
 ```elixir
 (true_term() ||| false_term()) |> format_term(true)
+```
+
+## Church Numerals
+
+```elixir
+import ShotDs.Stt.Numerals
+```
+
+```elixir
+num(0) |> format_term(true)
+```
+
+```elixir
+num(3) |> format_term(true)
+```
+
+```elixir
+succ(num(3)) |> format_term(true)
+```
+
+```elixir
+plus(num(2), num(3)) |> format_term(true)
+```
+
+```elixir
+mult(num(3), num(2)) |> format_term(true)
 ```
