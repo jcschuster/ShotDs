@@ -35,6 +35,11 @@ defmodule ShotDs.Stt.Numerals do
     end)
   end
 
+  def num_var(name) when is_binary(name) or is_reference(name) do
+    type_numeral = Type.new(:i, [@ii, @i])
+    TF.make_free_var_term(name, type_numeral)
+  end
+
   @doc """
   Generates the successor of the Church numeral term corresponding to the given
   ID. Returns the ID of the generated term.
