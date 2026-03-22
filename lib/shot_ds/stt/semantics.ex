@@ -32,7 +32,7 @@ defmodule ShotDs.Stt.Semantics do
                    depth,
                    acc_cache ->
       if head == fvar do
-        {shifted_replacement_id, acc_cache} = shift(replacement_id, depth, 0, acc_cache)
+        {shifted_replacement_id, _} = shift(replacement_id, depth, 0)
 
         reduced_id = TF.fold_apply(shifted_replacement_id, new_args)
 
@@ -129,7 +129,7 @@ defmodule ShotDs.Stt.Semantics do
       acc_cache
       when index == current_k ->
         shift_amount = current_k - k
-        {shifted_replacement_id, acc_cache} = shift(replacement_id, shift_amount, 0, acc_cache)
+        {shifted_replacement_id, _} = shift(replacement_id, shift_amount, 0)
 
         reduced_body_id = TF.fold_apply(shifted_replacement_id, new_args)
 
