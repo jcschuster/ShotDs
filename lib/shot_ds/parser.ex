@@ -100,7 +100,7 @@ defmodule ShotDs.Parser do
     build_term(pre_term, final_substitutions)
   end
 
-  ################################### TYPES ###################################
+  ################################### TYPES ####################################
 
   @doc """
   Parses a HOL type from TPTP syntax into a `ShotDs.Data.Type` struct.
@@ -145,9 +145,9 @@ defmodule ShotDs.Parser do
     {type, rest2}
   end
 
-  #############################################################################
-  # TERM BUILDER (Outputs Term.term_id())
-  #############################################################################
+  ##############################################################################
+  # TERM BUILDER
+  ##############################################################################
 
   defp build_term({:pre_app, f, arg, _type}, subst) do
     TF.make_appl_term(build_term(f, subst), build_term(arg, subst))
@@ -205,9 +205,9 @@ defmodule ShotDs.Parser do
     TF.make_const_term(name, TI.apply_subst(type, subst))
   end
 
-  #############################################################################
+  ##############################################################################
   # PARSING LOGIC
-  #############################################################################
+  ##############################################################################
 
   defp constrain(ctx, term_node, expected_type) do
     term_type = get_pre_type(term_node)
