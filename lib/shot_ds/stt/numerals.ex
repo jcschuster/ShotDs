@@ -41,10 +41,6 @@ defmodule ShotDs.Stt.Numerals do
   """
   @spec succ(Term.term_id()) :: Term.term_id()
   def succ(n_id) when is_integer(n_id) do
-    if !numeral?(n_id) do
-      raise "ArgumentError: the successor function is only defined on Church numerals!"
-    end
-
     lambda([type_ii(), type_i()], fn s, z ->
       app(s, app(n_id, [s, z]))
     end)
@@ -56,10 +52,6 @@ defmodule ShotDs.Stt.Numerals do
   """
   @spec plus(Term.term_id(), Term.term_id()) :: Term.term_id()
   def plus(m_id, n_id) when is_integer(m_id) and is_integer(n_id) do
-    if !numeral?(m_id) || !numeral?(n_id) do
-      raise "ArgumentError: the addition function is only defined on Church numerals!"
-    end
-
     lambda([type_ii(), type_i()], fn s, z ->
       app(m_id, [s, app(n_id, [s, z])])
     end)
@@ -71,10 +63,6 @@ defmodule ShotDs.Stt.Numerals do
   """
   @spec mult(Term.term_id(), Term.term_id()) :: Term.term_id()
   def mult(m_id, n_id) when is_integer(m_id) and is_integer(n_id) do
-    if !numeral?(m_id) || !numeral?(n_id) do
-      raise "ArgumentError: the multiplication function is only defined on Church numerals!"
-    end
-
     lambda([type_ii(), type_i()], fn s, z ->
       app(m_id, [app(n_id, s), z])
     end)
