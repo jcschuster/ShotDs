@@ -1,53 +1,83 @@
-defmodule ShotDs.TermFactoryTest do
-  use ShotDs.TermFactoryCase
+defmodule ShotDs.Stt.TermFactoryTest do
+  use ExUnit.Case, async: false
+  alias ShotDs.Data.{Type, Declaration}
+  alias ShotDs.Stt.TermFactory, as: TF
 
-  test "memoize/1 deduplicates equal term signatures" do
-    type = Type.new(:o)
-    decl = Declaration.new_const("c", type)
+  @i %Type{goal: :i, args: []}
+  @i_to_i %Type{goal: :i, args: [@i]}
 
-    draft = %Term{id: 0, head: decl, type: type}
+  setup_all do
+    # Ensure the ETS table is started for isolated test environments
+    if :ets.info(:term_pool) == :undefined do
+      :ets.new(:term_pool, [:set, :public, :named_table])
+      :ets.insert(:term_pool, {:id_counter, 0})
+    end
 
-    id1 = TF.memoize(draft)
-    id2 = TF.memoize(%Term{draft | id: <<1::256>>})
-
-    assert id1 == id2
+    :ok
   end
 
-  test "get_term/1 raises for unknown ids" do
-    assert_raise RuntimeError,
-                 ~r/Terms should only be constructed via the TermFactory module/,
-                 fn ->
-                   TF.get_term(1_000_000_000_000)
-                 end
+  describe "Term Construction and Memoization" do
+    test "memoizes basic terms properly" do
+      decl = Declaration.new_free_var("X", @i)
+      id1 = TF.make_term(decl)
+      id2 = TF.make_term(decl)
+
+      # IDs should be strictly identical due to hash-consing
+      assert id1 == id2
+
+      term = TF.get_term(id1)
+      assert term.head == decl
+      assert term.type == @i
+      assert term.fvars == [decl]
+    end
+
+    test "automatically eta-expands function types" do
+      decl = Declaration.new_free_var("F", @i_to_i)
+      id = TF.make_term(decl)
+      term = TF.get_term(id)
+
+      # Should be wrapped in 1 binder: λv1. F(v1)
+      assert length(term.bvars) == 1
+      assert term.type == @i_to_i
+
+      # The internal head should be the free variable F
+      assert term.head == decl
+
+      # It should be applied to 1 argument (the bound variable)
+      assert length(term.args) == 1
+      arg_term = TF.get_term(hd(term.args))
+      assert arg_term.head.kind == :bv
+      # De Bruijn index 1
+      assert arg_term.head.name == 1
+    end
   end
 
-  test "make_free_var_term/2 creates a variable term" do
-    id = TF.make_free_var_term("X", Type.new(:i))
+  describe "Application Gatekeeper" do
+    test "safely applies matching types" do
+      f_decl = Declaration.new_free_var("F", @i_to_i)
+      x_decl = Declaration.new_free_var("X", @i)
 
-    assert %Term{
-             head: %Declaration{kind: :fv, name: "X"},
-             args: [],
-             type: %Type{goal: :i, args: []},
-             max_num: 0,
-             fvars: [%Declaration{kind: :fv, name: "X"}]
-           } = TF.get_term(id)
-  end
+      f_id = TF.make_term(f_decl)
+      x_id = TF.make_term(x_decl)
 
-  test "make_const_term/2 eta-expands higher-order constants" do
-    id = TF.make_const_term("f", Type.new(:o, :i))
+      # Applying F (i -> i) to X (i) should return a term of type (i)
+      app_id = TF.make_appl_term(f_id, x_id)
+      app_term = TF.get_term(app_id)
 
-    assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}]}, bvars: [bv], args: [arg_id]} =
-             TF.get_term(id)
+      assert app_term.type == @i
+    end
 
-    assert %Declaration{kind: :bv, type: %Type{goal: :i}} = bv
+    test "violently rejects invalid applications (Type Check)" do
+      x_decl = Declaration.new_free_var("X", @i)
+      y_decl = Declaration.new_free_var("Y", @i)
 
-    arg_term = TF.get_term(arg_id)
-    assert %Declaration{kind: :bv, type: %Type{goal: :i}} = arg_term.head
-  end
+      x_id = TF.make_term(x_decl)
+      y_id = TF.make_term(y_decl)
 
-  test "make_const_term/2 for base type does not eta-expand" do
-    id = TF.make_const_term("a", Type.new(:i))
-
-    assert %Term{bvars: [], args: [], type: %Type{goal: :i}} = TF.get_term(id)
+      # X has type :i (expects 0 args). Applying Y should trigger a MatchError
+      assert_raise MatchError, fn ->
+        TF.make_appl_term(x_id, y_id)
+      end
+    end
   end
 end

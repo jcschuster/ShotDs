@@ -32,8 +32,7 @@ defmodule ShotDs.Stt.Semantics do
                    depth,
                    acc_cache ->
       if head == fvar do
-        effective_depth = depth + length(bvars)
-        {shifted_replacement_id, acc_cache} = shift(replacement_id, effective_depth, 0, acc_cache)
+        {shifted_replacement_id, acc_cache} = shift(replacement_id, depth, 0, acc_cache)
 
         reduced_id = TF.fold_apply(shifted_replacement_id, new_args)
 
@@ -94,11 +93,9 @@ defmodule ShotDs.Stt.Semantics do
     update_env = fn term, current_c -> current_c + length(term.bvars) end
 
     transform = fn %Term{head: head, bvars: bvars} = term, new_args, current_c, acc_cache ->
-      effective_c = current_c + length(bvars)
-
       new_head =
         case head do
-          %Declaration{kind: :bv, name: index, type: type} when index > effective_c ->
+          %Declaration{kind: :bv, name: index, type: type} when index > current_c ->
             Declaration.new_bound_var(index + d, type)
 
           decl ->
@@ -130,9 +127,8 @@ defmodule ShotDs.Stt.Semantics do
       new_args,
       current_k,
       acc_cache
-      when index == current_k + length(bvars) ->
-        effective_k = current_k + length(bvars)
-        shift_amount = effective_k - k
+      when index == current_k ->
+        shift_amount = current_k - k
         {shifted_replacement_id, acc_cache} = shift(replacement_id, shift_amount, 0, acc_cache)
 
         reduced_body_id = TF.fold_apply(shifted_replacement_id, new_args)
@@ -157,7 +153,7 @@ defmodule ShotDs.Stt.Semantics do
       new_args,
       current_k,
       acc_cache
-      when index > current_k + length(bvars) ->
+      when index > current_k ->
         new_head = Declaration.new_bound_var(index - 1, type)
         new_max_num = calc_new_max_num(new_head, new_args, bvars)
         new_fvars = calc_new_fvars(new_head, new_args)
