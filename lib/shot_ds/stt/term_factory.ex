@@ -268,7 +268,18 @@ defmodule ShotDs.Stt.TermFactory do
 
     transform = fn %Term{head: head, fvars: fvars} = term, new_args, depth, acc_cache ->
       new_fvars = List.delete(fvars, fvar)
-      new_head = if head == fvar, do: Declaration.new_bound_var(depth + 1, fvar.type), else: head
+
+      new_head =
+        case head do
+          ^fvar ->
+            Declaration.new_bound_var(depth + 1, fvar.type)
+
+          %Declaration{kind: :bv, name: n} when n > depth ->
+            Declaration.new_bound_var(n + 1, head.type)
+
+          _ ->
+            head
+        end
 
       new_max_num = calc_new_max_num(new_head, new_args, term.bvars)
 
