@@ -198,7 +198,7 @@ defmodule ShotDs.Stt.TermFactory do
 
     case var_kind do
       :fv ->
-        bv = Declaration.new_bound_var(max_num + 1, var_type)
+        bv = Declaration.new_bound_var(length(bvars) + 1, var_type)
         substituted = if var in fvars, do: bind_var(var, term_id), else: term_id
         make_abstr_term(substituted, bv)
 
