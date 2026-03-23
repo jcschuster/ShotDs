@@ -30,6 +30,67 @@ defmodule ShotDs.Stt.TermFactory do
 
   @doc group: :"Term Cache"
   @doc """
+  Functions as a simple wrapper enabling garbage collection of unreachable terms
+  in the ETS store.
+
+  Executes a function, tracking all terms created within the current process.
+  After execution, it calculates which terms belong to the final result and
+  deletes all other intermediate/temporary terms from the ETS table which are
+  no longer reachable.
+
+  ## Example:
+
+      iex> without_garbage_collection = term_generating_code
+      iex> with_garbage_collection = with_local_cleanup(fn -> term_generating_code end)
+  """
+  @spec with_local_cleanup((-> Term.term_id())) :: Term.term_id()
+  def with_local_cleanup(fun) do
+    keys_before = get_all_ets_keys()
+
+    final_id = fun.()
+
+    keys_after = get_all_ets_keys()
+
+    all_created = MapSet.difference(keys_after, keys_before) |> Enum.filter(&is_integer/1)
+
+    kept_ids = get_all_subterms(final_id, MapSet.new())
+
+    Enum.reject(all_created, &MapSet.member?(kept_ids, &1))
+    |> delete_terms()
+
+    final_id
+  end
+
+  defp get_all_ets_keys() do
+    :ets.foldl(fn {key, _}, acc -> MapSet.put(acc, key) end, MapSet.new(), @table)
+  end
+
+  defp get_all_subterms(id, visited) do
+    if MapSet.member?(visited, id) do
+      visited
+    else
+      term = get_term(id)
+      new_visited = MapSet.put(visited, id)
+      Enum.reduce(term.args, new_visited, &get_all_subterms/2)
+    end
+  end
+
+  defp delete_terms(ids) do
+    Enum.each(ids, fn id ->
+      case :ets.lookup(@table, id) do
+        [{^id, term}] ->
+          signature = get_signature(term)
+          :ets.delete(@table, signature)
+          :ets.delete(@table, id)
+
+        [] ->
+          :ok
+      end
+    end)
+  end
+
+  @doc group: :"Term Cache"
+  @doc """
   Memoizes the given term in the module's `:ets` table. Terms will be
   identified if they share the same *signature*, e.g., all fields but `id`.
 
@@ -104,33 +165,36 @@ defmodule ShotDs.Stt.TermFactory do
   def make_term(%Declaration{kind: kind, type: type} = decl) do
     fvars = if kind == :fv, do: [decl], else: []
 
-    case type do
-      %Type{args: []} ->
-        %Term{id: @dummy_id, head: decl, type: type, fvars: fvars}
-        |> memoize()
-
-      %Type{goal: goal_type, args: arg_types} ->
-        new_vars = Enum.map(arg_types, &Declaration.fresh_var/1)
-        new_arg_ids = Enum.map(new_vars, &make_term/1)
-
-        max_num =
-          new_arg_ids
-          |> Enum.map(fn id -> get_term(id).max_num end)
-          |> Enum.max(fn -> 0 end)
-
-        base_term = %Term{
-          id: @dummy_id,
-          head: decl,
-          args: new_arg_ids,
-          type: Type.new(goal_type),
-          fvars: fvars ++ new_vars,
-          max_num: max_num
-        }
-
-        base_term_id = memoize(base_term)
-
-        List.foldr(new_vars, base_term_id, &make_abstr_term(&2, &1))
+    if Enum.empty?(type.args) do
+      memoize(%Term{id: @dummy_id, head: decl, type: type, fvars: fvars})
+    else
+      make_eta_expanded(decl, fvars)
     end
+  end
+
+  defp make_eta_expanded(%Declaration{type: type} = decl, fvars) do
+    with_local_cleanup(fn ->
+      new_vars = Enum.map(type.args, &Declaration.fresh_var/1)
+      new_arg_ids = Enum.map(new_vars, &make_term/1)
+
+      max_num =
+        new_arg_ids
+        |> Enum.map(fn id -> get_term(id).max_num end)
+        |> Enum.max(fn -> 0 end)
+
+      base_term = %Term{
+        id: @dummy_id,
+        head: decl,
+        args: new_arg_ids,
+        type: Type.new(type.goal),
+        fvars: fvars ++ new_vars,
+        max_num: max_num
+      }
+
+      base_term_id = memoize(base_term)
+
+      List.foldr(new_vars, base_term_id, &make_abstr_term(&2, &1))
+    end)
   end
 
   @doc group: :"Term Construction API"
@@ -149,6 +213,11 @@ defmodule ShotDs.Stt.TermFactory do
   Creates a fresh variable of the given type and returns the ID for its term
   representation. Short for
   `ShotDs.Data.Declaration.fresh_var(type) |> make_term()`.
+
+  > #### Note {: .info}
+  >
+  > Consider utilizing `with_local_cleanup/1` when generating temporary
+  > variables for garbage collection.
   """
   @spec make_fresh_var_term(Type.t()) :: Term.term_id()
   def make_fresh_var_term(%Type{} = type) do

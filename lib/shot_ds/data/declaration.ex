@@ -77,6 +77,11 @@ defmodule ShotDs.Data.Declaration do
   @doc """
   Generates a fresh variable of the given type using Erlang references to
   ensure uniqueness. Useful for γ-instantiations in tableaux.
+
+  > #### Note {: .info}
+  >
+  > Consider utilizing `ShotDs.Stt.TermFactory.with_local_cleanup/1` when
+  > generating temporary variables for garbage collection.
   """
   @spec fresh_var(Type.t()) :: free_var_t()
   def fresh_var(%Type{} = t), do: new_free_var(make_ref(), t)
