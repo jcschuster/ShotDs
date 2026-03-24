@@ -7,10 +7,11 @@ defmodule ShotDs.Tptp do
   https://doi.org/10.1007/s10817-017-9407-7.
   """
 
-  alias ShotDs.Data.{Context, Problem, Declaration}
+  alias ShotDs.Data.{Context, Problem, Declaration, Term}
   alias ShotDs.Parser
   alias ShotDs.Util.Lexer
   alias ShotDs.Stt.TermFactory, as: TF
+  import ShotDs.Hol.Patterns
 
   @doc """
   Parses a TPTP file in TH0 syntax at the provided path into a
@@ -129,8 +130,27 @@ defmodule ShotDs.Tptp do
 
   # --- Problem Struct Updaters ---
 
-  defp update_problem_statements(problem, :definition, name, term_id) do
-    %{problem | definitions: Map.put(problem.definitions, name, term_id)}
+  defp update_problem_statements(problem, :definition, _name, term_id) do
+    case TF.get_term(term_id) do
+      equality(lhs, rhs) ->
+        %Term{bvars: lbvars, head: decl, args: largs} = TF.get_term(lhs)
+
+        is_valid_const =
+          match?(%Declaration{kind: :co}, decl) &&
+            Enum.all?(
+              Enum.zip(Enum.reverse(lbvars), largs),
+              fn {bv, arg} -> TF.make_term(bv) === arg end
+            )
+
+        if is_valid_const do
+          %{problem | definitions: Map.put(problem.definitions, decl, rhs)}
+        else
+          raise "TPTP Parser Error: Left-hand side of the definition must be a single constant."
+        end
+
+      _ ->
+        raise "TPTP Parser Error: Definition is not a valid equation."
+    end
   end
 
   defp update_problem_statements(problem, role, name, term_id)
@@ -180,26 +200,10 @@ defmodule ShotDs.Tptp do
         {name, type_struct}, ctx -> Context.put_const(ctx, name, type_struct)
       end)
 
-    Enum.reduce(problem.definitions, ctx_with_types, fn {_name, term_id}, ctx ->
-      case extract_defined_constant(term_id) do
-        {name, type} -> Context.put_const(ctx, name, type)
-        nil -> ctx
-      end
+    Enum.reduce(problem.definitions, ctx_with_types, fn
+      {%Declaration{name: name, type: type}, _rhs_term_id}, ctx ->
+        Context.put_const(ctx, name, type)
     end)
-  end
-
-  # Flattens out the nested struct lookups using 'with'
-  defp extract_defined_constant(term_id) do
-    term = TF.get_term(term_id)
-
-    with %Declaration{kind: :co, name: "="} <- term.head,
-         [lhs_id, _rhs_id] <- term.args,
-         lhs_term = TF.get_term(lhs_id),
-         %Declaration{kind: :co, name: name, type: type} <- lhs_term.head do
-      {name, type}
-    else
-      _ -> nil
-    end
   end
 
   defp merge_problems(main, included) do

@@ -30,7 +30,9 @@ defmodule ShotDs.TptpTest do
 
     assert {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
 
-    assert Map.has_key?(problem.definitions, "def1")
+    # Definitions are stored with Declaration objects as keys
+    f_decl = %Declaration{kind: :co, name: "f", type: Type.new(:i)}
+    assert Map.has_key?(problem.definitions, f_decl)
     assert [{"ax1", _}] = problem.axioms
   end
 

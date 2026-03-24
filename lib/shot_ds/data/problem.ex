@@ -16,7 +16,7 @@ defmodule ShotDs.Data.Problem do
   Note that definitions are not unfolded in the proof problem but kept as
   constants.
   """
-  alias ShotDs.Data.{Term, Type}
+  alias ShotDs.Data.{Type, Declaration, Term}
 
   defstruct path: "", includes: [], types: %{}, definitions: %{}, axioms: [], conjecture: nil
 
@@ -36,18 +36,18 @@ defmodule ShotDs.Data.Problem do
   side.
 
   The axioms are stored as a list of pairs containing the axiom's name as
-  string and term as `ShotDs.Data.Term`.
+  string and term as its corresponding ID.
 
   The conjecture is tuple containing the conjecture's name as string and the
-  conjecture itself as `ShotDs.Data.Term`. The field's value is `nil` if no
+  conjecture itself as the term's ID. The field's value is `nil` if no
   conjecture could be found.
   """
   @type t() :: %__MODULE__{
           path: String.t(),
           includes: [String.t()],
           types: %{String.t() => :base_type | Type.t()},
-          definitions: %{String.t() => Term.t()},
-          axioms: [{String.t(), Term.t()}],
-          conjecture: {String.t(), Term.t()} | nil
+          definitions: %{Declaration.t() => Term.term_id()},
+          axioms: [{String.t(), Term.term_id()}],
+          conjecture: {String.t(), Term.term_id()} | nil
         }
 end
