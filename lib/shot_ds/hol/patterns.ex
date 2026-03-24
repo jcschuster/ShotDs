@@ -158,6 +158,23 @@ defmodule ShotDs.Hol.Patterns do
 
   @doc """
   Matches a term representing the universal quantification of the predicate
+  `body_id` with respect to the element type `type`.
+  """
+  defmacro typed_universal_quantification(body_id, type) do
+    quote do
+      %Term{
+        bvars: [],
+        head: %Declaration{
+          name: "Π",
+          type: %Type{goal: :o, args: [%Type{goal: :o, args: [unquote(type)]}]}
+        },
+        args: [unquote(body_id)]
+      }
+    end
+  end
+
+  @doc """
+  Matches a term representing the universal quantification of the predicate
   `body_id`.
   """
   defmacro existential_quantification(body_id) do
@@ -165,6 +182,23 @@ defmodule ShotDs.Hol.Patterns do
       %Term{
         bvars: [],
         head: %Declaration{name: "Σ", type: %Type{goal: :o, args: [%Type{goal: :o, args: [_]}]}},
+        args: [unquote(body_id)]
+      }
+    end
+  end
+
+  @doc """
+  Matches a term representing the universal quantification of the predicate
+  `body_id` with respect to the element type `type`.
+  """
+  defmacro typed_existential_quantification(body_id, type) do
+    quote do
+      %Term{
+        bvars: [],
+        head: %Declaration{
+          name: "Σ",
+          type: %Type{goal: :o, args: [%Type{goal: :o, args: [unquote(type)]}]}
+        },
         args: [unquote(body_id)]
       }
     end
