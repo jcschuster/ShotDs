@@ -2,13 +2,11 @@ defmodule ShotDs.Stt.TermFactoryTest do
   use ExUnit.Case, async: false
   alias ShotDs.Data.{Type, Declaration, Term}
   alias ShotDs.Stt.TermFactory, as: TF
-  import ShotDs.Hol.Dsl
 
   @i %Type{goal: :i, args: []}
   @i_to_i %Type{goal: :i, args: [@i]}
 
   setup_all do
-    # Ensure the ETS table is started for isolated test environments
     if :ets.info(:term_pool) == :undefined do
       :ets.new(:term_pool, [:set, :public, :named_table])
       :ets.insert(:term_pool, {:id_counter, 0})

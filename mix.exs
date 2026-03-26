@@ -1,7 +1,7 @@
 defmodule ShotDs.MixProject do
   use Mix.Project
 
-  @version "0.3.3"
+  @version "0.3.4"
   @source_url "https://github.com/jcschuster/ShotDs"
 
   def project do
@@ -47,6 +47,38 @@ defmodule ShotDs.MixProject do
       ],
       source_url: @source_url,
       source_ref: "v#{@version}",
+      groups_for_modules: [
+        "Core Data Structures": [
+          ShotDs.Data.Type,
+          ShotDs.Data.Declaration,
+          ShotDs.Data.Term,
+          ShotDs.Data.Substitution
+        ],
+        "Data Structures for Parsing": [
+          ShotDs.Data.Context,
+          ShotDs.Data.Problem
+        ],
+        "Simple Type Theory": [
+          ShotDs.Stt.TermFactory,
+          ShotDs.Stt.Semantics,
+          ShotDs.Stt.Numerals
+        ],
+        "Higher-Order Logic": [
+          ShotDs.Hol.Definitions,
+          ShotDs.Hol.Dsl,
+          ShotDs.Hol.Patterns
+        ],
+        Utilities: [
+          ShotDs.Util.Formatter,
+          ShotDs.Util.TermTraversal,
+          ShotDs.Util.TypeInference,
+          ShotDs.Util.Lexer
+        ],
+        Parsing: [
+          ShotDs.Parser,
+          ShotDs.Tptp
+        ]
+      ],
       before_closing_head_tag: &before_closing_head_tag/1,
       before_closing_body_tag: &before_closing_body_tag/1
     ]

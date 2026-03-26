@@ -30,13 +30,10 @@ defmodule ShotDs.Stt.TermFactory do
 
   @doc group: :"Term Cache"
   @doc """
-  Functions as a simple wrapper enabling garbage collection of unreachable terms
-  in the ETS store.
+  Executes a function and safely garbage collects any temporary terms created
+  within this specific scope that are no longer needed by the final result.
 
-  Executes a function, tracking all terms created within the current process.
-  After execution, it calculates which terms belong to the final result and
-  deletes all other intermediate/temporary terms from the ETS table which are
-  no longer reachable.
+  Employs reference counting for concurrency-safety.
 
   ## Example:
 
@@ -45,48 +42,78 @@ defmodule ShotDs.Stt.TermFactory do
   """
   @spec with_local_cleanup((-> Term.term_id())) :: Term.term_id()
   def with_local_cleanup(fun) do
-    keys_before = get_all_ets_keys()
+    previous_refs = Process.get(:active_term_refs)
+    Process.put(:active_term_refs, [])
 
-    final_id = fun.()
+    try do
+      final_id = fun.()
 
-    keys_after = get_all_ets_keys()
+      current_refs = Process.get(:active_term_refs, [])
 
-    all_created = MapSet.difference(keys_after, keys_before) |> Enum.filter(&is_integer/1)
+      if previous_refs do
+        Process.put(:active_term_refs, previous_refs)
+      else
+        Process.delete(:active_term_refs)
+      end
 
-    kept_ids = get_all_subterms(final_id, MapSet.new())
+      refs_to_release =
+        case Enum.find_index(current_refs, &(&1 == final_id)) do
+          nil -> current_refs
+          idx -> List.delete_at(current_refs, idx)
+        end
 
-    Enum.reject(all_created, &MapSet.member?(kept_ids, &1))
-    |> delete_terms()
+      Enum.each(refs_to_release, &release_term/1)
 
-    final_id
-  end
+      track_local_ref(final_id)
 
-  defp get_all_ets_keys() do
-    :ets.foldl(fn {key, _}, acc -> MapSet.put(acc, key) end, MapSet.new(), @table)
-  end
+      final_id
+    catch
+      kind, reason ->
+        current_refs = Process.get(:active_term_refs, [])
+        Enum.each(current_refs, &release_term/1)
 
-  defp get_all_subterms(id, visited) do
-    if MapSet.member?(visited, id) do
-      visited
-    else
-      term = get_term(id)
-      new_visited = MapSet.put(visited, id)
-      Enum.reduce(term.args, new_visited, &get_all_subterms/2)
+        :erlang.raise(kind, reason, __STACKTRACE__)
+    after
+      if previous_refs do
+        Process.put(:active_term_refs, previous_refs)
+      else
+        Process.delete(:actice_term_refs)
+      end
     end
   end
 
-  defp delete_terms(ids) do
-    Enum.each(ids, fn id ->
-      case :ets.lookup(@table, id) do
-        [{^id, term}] ->
-          signature = get_signature(term)
-          :ets.delete(@table, signature)
-          :ets.delete(@table, id)
+  defp track_local_ref(id) do
+    case Process.get(:active_term_refs) do
+      nil -> :ok
+      refs -> Process.put(:active_term_refs, [id | refs])
+    end
+  end
 
-        [] ->
-          :ok
-      end
-    end)
+  @doc group: :"Term Cache"
+  @doc """
+  Decrements the reference count of a term, safely deleting it if it reaches 0.
+  Cascades deletions to sub-expressions.
+  """
+  @spec release_term(Term.term_id()) :: :ok
+  def release_term(id) do
+    case :ets.update_counter(@table, id, {3, -1}) do
+      0 ->
+        case :ets.lookup(@table, id) do
+          [{^id, term, 0}] ->
+            signature = get_signature(term)
+
+            :ets.delete(@table, signature)
+            :ets.delete(@table, id)
+
+            Enum.each(term.args, &release_term/1)
+
+          _ ->
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
   end
 
   @doc group: :"Term Cache"
@@ -105,24 +132,49 @@ defmodule ShotDs.Stt.TermFactory do
   """
   @spec memoize(Term.t()) :: Term.term_id()
   def memoize(%Term{} = draft_term) do
+    id = lookup_or_generate_id(draft_term)
+
+    track_local_ref(id)
+    id
+  end
+
+  defp lookup_or_generate_id(%Term{} = draft_term) do
     signature = get_signature(draft_term)
 
     case :ets.lookup(@table, signature) do
       [{^signature, existing_id}] ->
+        :ets.update_counter(@table, existing_id, {3, 1})
         existing_id
 
       [] ->
-        new_id = :ets.update_counter(@table, :id_counter, {2, 1})
+        generate_concurrent_id(draft_term)
+    end
+  end
 
-        if :ets.insert_new(@table, {signature, new_id}) do
-          term = %Term{draft_term | id: new_id}
-          :ets.insert(@table, {new_id, term})
-          new_id
-        else
-          # Another process inserted this signature in between
-          [{^signature, winning_id}] = :ets.lookup(@table, signature)
-          winning_id
-        end
+  defp generate_concurrent_id(%Term{} = draft_term) do
+    signature = get_signature(draft_term)
+    new_id = :ets.update_counter(@table, :id_counter, {2, 1})
+
+    Enum.each(draft_term.args, fn arg_id ->
+      :ets.update_counter(@table, arg_id, {3, 1})
+    end)
+
+    term = %Term{draft_term | id: new_id}
+
+    :ets.insert(@table, {new_id, term, 1})
+
+    if :ets.insert_new(@table, {signature, new_id}) do
+      new_id
+    else
+      Enum.each(draft_term.args, fn arg_id ->
+        :ets.update_counter(@table, arg_id, {3, -1})
+      end)
+
+      :ets.delete(@table, new_id)
+
+      [{^signature, winning_id}] = :ets.lookup(@table, signature)
+      :ets.update_counter(@table, winning_id, {3, 1})
+      winning_id
     end
   end
 
@@ -142,7 +194,7 @@ defmodule ShotDs.Stt.TermFactory do
       [] ->
         raise "Terms should only be constructed via the TermFactory module, not via struct initialization!"
 
-      [{^id, term}] ->
+      [{^id, term, _ref_count}] ->
         term
     end
   end
