@@ -1,6 +1,6 @@
 defmodule ShotDs.Stt.TermFactoryTest do
   use ExUnit.Case, async: false
-  alias ShotDs.Data.{Type, Declaration, Term}
+  alias ShotDs.Data.{Type, Declaration}
   alias ShotDs.Stt.TermFactory, as: TF
 
   @i %Type{goal: :i, args: []}
@@ -13,37 +13,6 @@ defmodule ShotDs.Stt.TermFactoryTest do
     end
 
     :ok
-  end
-
-  describe "with_local_cleanup/1" do
-    test "deletes unreferenced intermediate terms while keeping the final DAG" do
-      safe_type = Type.new(:o)
-      pre_existing_id = TF.make_fresh_var_term(safe_type)
-
-      parent = self()
-
-      final_id =
-        TF.with_local_cleanup(fn ->
-          garbage_id = TF.make_fresh_var_term(Type.new(:i))
-          send(parent, {:garbage_id, garbage_id})
-
-          kept_id = TF.make_fresh_var_term(Type.new(:i))
-          kept_id
-        end)
-
-      assert_receive {:garbage_id, garbage_id}
-
-      assert %Term{} = TF.get_term(pre_existing_id)
-      assert %Term{} = TF.get_term(final_id)
-
-      assert_raise RuntimeError,
-                   "Terms should only be constructed via the TermFactory module, not via struct initialization!",
-                   fn ->
-                     TF.get_term(garbage_id)
-                   end
-
-      assert [] = :ets.match_object(:term_pool, {garbage_id, :_})
-    end
   end
 
   describe "Term Construction and Memoization" do

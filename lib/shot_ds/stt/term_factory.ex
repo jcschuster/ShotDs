@@ -30,94 +30,6 @@ defmodule ShotDs.Stt.TermFactory do
 
   @doc group: :"Term Cache"
   @doc """
-  Executes a function and safely garbage collects any temporary terms created
-  within this specific scope that are no longer needed by the final result.
-
-  Employs reference counting for concurrency-safety.
-
-  ## Example:
-
-      iex> without_garbage_collection = term_generating_code
-      iex> with_garbage_collection = with_local_cleanup(fn -> term_generating_code end)
-  """
-  @spec with_local_cleanup((-> Term.term_id())) :: Term.term_id()
-  def with_local_cleanup(fun) do
-    previous_refs = Process.get(:active_term_refs)
-    Process.put(:active_term_refs, [])
-
-    try do
-      final_id = fun.()
-
-      current_refs = Process.get(:active_term_refs, [])
-
-      if previous_refs do
-        Process.put(:active_term_refs, previous_refs)
-      else
-        Process.delete(:active_term_refs)
-      end
-
-      refs_to_release =
-        case Enum.find_index(current_refs, &(&1 == final_id)) do
-          nil -> current_refs
-          idx -> List.delete_at(current_refs, idx)
-        end
-
-      Enum.each(refs_to_release, &release_term/1)
-
-      track_local_ref(final_id)
-
-      final_id
-    catch
-      kind, reason ->
-        current_refs = Process.get(:active_term_refs, [])
-        Enum.each(current_refs, &release_term/1)
-
-        :erlang.raise(kind, reason, __STACKTRACE__)
-    after
-      if previous_refs do
-        Process.put(:active_term_refs, previous_refs)
-      else
-        Process.delete(:actice_term_refs)
-      end
-    end
-  end
-
-  defp track_local_ref(id) do
-    case Process.get(:active_term_refs) do
-      nil -> :ok
-      refs -> Process.put(:active_term_refs, [id | refs])
-    end
-  end
-
-  @doc group: :"Term Cache"
-  @doc """
-  Decrements the reference count of a term, safely deleting it if it reaches 0.
-  Cascades deletions to sub-expressions.
-  """
-  @spec release_term(Term.term_id()) :: :ok
-  def release_term(id) do
-    case :ets.update_counter(@table, id, {3, -1}) do
-      0 ->
-        case :ets.lookup(@table, id) do
-          [{^id, term, 0}] ->
-            signature = get_signature(term)
-
-            :ets.delete(@table, signature)
-            :ets.delete(@table, id)
-
-            Enum.each(term.args, &release_term/1)
-
-          _ ->
-            :ok
-        end
-
-      _ ->
-        :ok
-    end
-  end
-
-  @doc group: :"Term Cache"
-  @doc """
   Memoizes the given term in the module's `:ets` table. Terms will be
   identified if they share the same *signature*, e.g., all fields but `id`.
 
@@ -132,18 +44,10 @@ defmodule ShotDs.Stt.TermFactory do
   """
   @spec memoize(Term.t()) :: Term.term_id()
   def memoize(%Term{} = draft_term) do
-    id = lookup_or_generate_id(draft_term)
-
-    track_local_ref(id)
-    id
-  end
-
-  defp lookup_or_generate_id(%Term{} = draft_term) do
     signature = get_signature(draft_term)
 
     case :ets.lookup(@table, signature) do
       [{^signature, existing_id}] ->
-        :ets.update_counter(@table, existing_id, {3, 1})
         existing_id
 
       [] ->
@@ -155,13 +59,9 @@ defmodule ShotDs.Stt.TermFactory do
     signature = get_signature(draft_term)
     new_id = :ets.update_counter(@table, :id_counter, {2, 1})
 
-    Enum.each(draft_term.args, fn arg_id ->
-      :ets.update_counter(@table, arg_id, {3, 1})
-    end)
-
     term = %Term{draft_term | id: new_id}
 
-    :ets.insert(@table, {new_id, term, 1})
+    :ets.insert(@table, {new_id, term})
 
     link_signature_or_rollback(signature, new_id, draft_term)
   end
@@ -172,13 +72,6 @@ defmodule ShotDs.Stt.TermFactory do
     else
       case :ets.lookup(@table, signature) do
         [{^signature, winning_id}] ->
-          Enum.each(draft_term.args, fn arg_id ->
-            :ets.update_counter(@table, arg_id, {3, -1})
-          end)
-
-          :ets.delete(@table, new_id)
-
-          :ets.update_counter(@table, winning_id, {3, 1})
           winning_id
 
         [] ->
@@ -203,7 +96,7 @@ defmodule ShotDs.Stt.TermFactory do
       [] ->
         raise "Terms should only be constructed via the TermFactory module, not via struct initialization!"
 
-      [{^id, term, _ref_count}] ->
+      [{^id, term}] ->
         term
     end
   end
@@ -234,28 +127,26 @@ defmodule ShotDs.Stt.TermFactory do
   end
 
   defp make_eta_expanded(%Declaration{type: type} = decl, fvars) do
-    with_local_cleanup(fn ->
-      new_vars = Enum.map(type.args, &Declaration.fresh_var/1)
-      new_arg_ids = Enum.map(new_vars, &make_term/1)
+    new_vars = Enum.map(type.args, &Declaration.fresh_var/1)
+    new_arg_ids = Enum.map(new_vars, &make_term/1)
 
-      max_num =
-        new_arg_ids
-        |> Enum.map(fn id -> get_term(id).max_num end)
-        |> Enum.max(fn -> 0 end)
+    max_num =
+      new_arg_ids
+      |> Enum.map(fn id -> get_term(id).max_num end)
+      |> Enum.max(fn -> 0 end)
 
-      base_term = %Term{
-        id: @dummy_id,
-        head: decl,
-        args: new_arg_ids,
-        type: Type.new(type.goal),
-        fvars: fvars ++ new_vars,
-        max_num: max_num
-      }
+    base_term = %Term{
+      id: @dummy_id,
+      head: decl,
+      args: new_arg_ids,
+      type: Type.new(type.goal),
+      fvars: fvars ++ new_vars,
+      max_num: max_num
+    }
 
-      base_term_id = memoize(base_term)
+    base_term_id = memoize(base_term)
 
-      List.foldr(new_vars, base_term_id, &make_abstr_term(&2, &1))
-    end)
+    List.foldr(new_vars, base_term_id, &make_abstr_term(&2, &1))
   end
 
   @doc group: :"Term Construction API"
@@ -274,11 +165,6 @@ defmodule ShotDs.Stt.TermFactory do
   Creates a fresh variable of the given type and returns the ID for its term
   representation. Short for
   `ShotDs.Data.Declaration.fresh_var(type) |> make_term()`.
-
-  > #### Note {: .info}
-  >
-  > Consider utilizing `with_local_cleanup/1` when generating temporary
-  > variables for garbage collection.
   """
   @spec make_fresh_var_term(Type.t()) :: Term.term_id()
   def make_fresh_var_term(%Type{} = type) do

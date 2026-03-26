@@ -109,15 +109,13 @@ defmodule ShotDs.Hol.Dsl do
     do: exists([t], body_fn)
 
   defp build_quantified_term(var_types, body_fn, quantifier_fn) do
-    TF.with_local_cleanup(fn ->
-      decls = Enum.map(var_types, &Declaration.fresh_var/1)
-      var_terms = Enum.map(decls, &TF.make_term/1)
-      body_term_id = apply(body_fn, var_terms)
+    decls = Enum.map(var_types, &Declaration.fresh_var/1)
+    var_terms = Enum.map(decls, &TF.make_term/1)
+    body_term_id = apply(body_fn, var_terms)
 
-      List.foldr(decls, body_term_id, fn %Declaration{type: type} = decl, acc_term_id ->
-        abstracted_body = TF.make_abstr_term(acc_term_id, decl)
-        quantifier_fn.(type) |> app(abstracted_body)
-      end)
+    List.foldr(decls, body_term_id, fn %Declaration{type: type} = decl, acc_term_id ->
+      abstracted_body = TF.make_abstr_term(acc_term_id, decl)
+      quantifier_fn.(type) |> app(abstracted_body)
     end)
   end
 
@@ -147,16 +145,14 @@ defmodule ShotDs.Hol.Dsl do
   """
   @spec lambda([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
   def lambda(var_types, body_fn) when is_function(body_fn) do
-    TF.with_local_cleanup(fn ->
-      decls =
-        var_types
-        |> List.wrap()
-        |> List.flatten()
-        |> Enum.map(&Declaration.fresh_var/1)
+    decls =
+      var_types
+      |> List.wrap()
+      |> List.flatten()
+      |> Enum.map(&Declaration.fresh_var/1)
 
-      var_terms = Enum.map(decls, &TF.make_term/1)
-      body_term_id = apply(body_fn, var_terms)
-      List.foldr(decls, body_term_id, &TF.make_abstr_term(&2, &1))
-    end)
+    var_terms = Enum.map(decls, &TF.make_term/1)
+    body_term_id = apply(body_fn, var_terms)
+    List.foldr(decls, body_term_id, &TF.make_abstr_term(&2, &1))
   end
 end
