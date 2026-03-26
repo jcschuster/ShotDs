@@ -163,18 +163,27 @@ defmodule ShotDs.Stt.TermFactory do
 
     :ets.insert(@table, {new_id, term, 1})
 
+    link_signature_or_rollback(signature, new_id, draft_term)
+  end
+
+  defp link_signature_or_rollback(signature, new_id, draft_term) do
     if :ets.insert_new(@table, {signature, new_id}) do
       new_id
     else
-      Enum.each(draft_term.args, fn arg_id ->
-        :ets.update_counter(@table, arg_id, {3, -1})
-      end)
+      case :ets.lookup(@table, signature) do
+        [{^signature, winning_id}] ->
+          Enum.each(draft_term.args, fn arg_id ->
+            :ets.update_counter(@table, arg_id, {3, -1})
+          end)
 
-      :ets.delete(@table, new_id)
+          :ets.delete(@table, new_id)
 
-      [{^signature, winning_id}] = :ets.lookup(@table, signature)
-      :ets.update_counter(@table, winning_id, {3, 1})
-      winning_id
+          :ets.update_counter(@table, winning_id, {3, 1})
+          winning_id
+
+        [] ->
+          link_signature_or_rollback(signature, new_id, draft_term)
+      end
     end
   end
 
@@ -307,10 +316,10 @@ defmodule ShotDs.Stt.TermFactory do
   Abstracts the term corresponding to the given id over the given variable. If
   the variable is already bound, adds it to the list of bound variables.
 
-  #### Note {: .info}
-
-  Consider using `ShotDs.Hol.Dsl.lambda/2` instead as it is more expressive and
-  robust.
+  > #### Note {: .info}
+  >
+  > Consider using `ShotDs.Hol.Dsl.lambda/2` instead as it is more expressive
+  > and robust.
   """
   @spec make_abstr_term(Term.term_id(), Declaration.t()) :: Term.term_id()
   def make_abstr_term(term_id, %Declaration{kind: var_kind, name: var_name, type: var_type} = var) do
@@ -337,10 +346,10 @@ defmodule ShotDs.Stt.TermFactory do
   Applies the term corresponding to `left_id` to the term corresponding to
   `right_id`.
 
-  #### Note {: .info}
-
-  Consider using `ShotDs.Hol.Dsl.app/2` instead as it is more expressive and
-  robust.
+  > #### Note {: .info}
+  >
+  > Consider using `ShotDs.Hol.Dsl.app/2` instead as it is more expressive and
+  > robust.
   """
   @spec make_appl_term(Term.term_id(), Term.term_id()) :: Term.term_id()
   def make_appl_term(left_id, right_id) do
