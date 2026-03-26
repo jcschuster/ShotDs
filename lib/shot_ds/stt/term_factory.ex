@@ -120,7 +120,13 @@ defmodule ShotDs.Stt.TermFactory do
     fvars = if kind == :fv, do: [decl], else: []
 
     if Enum.empty?(type.args) do
-      memoize(%Term{id: @dummy_id, head: decl, type: type, fvars: fvars})
+      max_num =
+        case decl do
+          %Declaration{kind: :bv, name: n} -> n
+          _ -> 0
+        end
+
+      memoize(%Term{id: @dummy_id, head: decl, type: type, fvars: fvars, max_num: max_num})
     else
       make_eta_expanded(decl, fvars)
     end
@@ -131,9 +137,10 @@ defmodule ShotDs.Stt.TermFactory do
     new_arg_ids = Enum.map(new_vars, &make_term/1)
 
     max_num =
-      new_arg_ids
-      |> Enum.map(fn id -> get_term(id).max_num end)
-      |> Enum.max(fn -> 0 end)
+      case decl do
+        %Declaration{kind: :bv, name: n} -> n
+        _ -> 0
+      end
 
     base_term = %Term{
       id: @dummy_id,
