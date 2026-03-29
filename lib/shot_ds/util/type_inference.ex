@@ -95,9 +95,7 @@ defmodule ShotDs.Util.TypeInference do
   # Handles partial application unification
   defp unify_partial(g_short, a_short, g_long, a_long, subst) do
     if is_reference(g_short) do
-      diff = length(a_long) - length(a_short)
-
-      {extra_a_long, shared_a_long} = Enum.split(a_long, diff)
+      {shared_a_long, extra_a_long} = Enum.split(a_long, length(a_short))
 
       subst_after_args =
         Enum.zip(a_short, shared_a_long)

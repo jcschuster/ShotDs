@@ -77,12 +77,14 @@ defmodule ShotDs.Tptp do
          [
            {:keyword, :include},
            {:lparen, _},
-           {:distinct, file_path},
+           {:distinct, raw_file_path},
            {:rparen, _},
            {:dot, _} | rest
          ],
          problem
        ) do
+    file_path = String.trim(raw_file_path, "'")
+
     if file_path == problem.path do
       raise "TPTP Parser Error: Cyclic import of #{file_path}"
     end
@@ -130,22 +132,17 @@ defmodule ShotDs.Tptp do
 
   # --- Problem Struct Updaters ---
 
-  defp update_problem_statements(problem, :definition, _name, term_id) do
+  defp update_problem_statements(problem, :definition, name, term_id) do
     case TF.get_term(term_id) do
       equality(lhs, rhs) ->
-        %Term{bvars: lbvars, head: decl, args: largs} = TF.get_term(lhs)
+        %Term{head: decl} = TF.get_term(lhs)
 
-        is_valid_const =
-          match?(%Declaration{kind: :co}, decl) &&
-            Enum.all?(
-              Enum.zip(Enum.reverse(lbvars), largs),
-              fn {bv, arg} -> TF.make_term(bv) === arg end
-            )
+        is_valid_const = match?(%Declaration{kind: :co}, decl)
 
         if is_valid_const do
           %{problem | definitions: Map.put(problem.definitions, decl, rhs)}
         else
-          raise "TPTP Parser Error: Left-hand side of the definition must be a single constant."
+          update_problem_statements(problem, :axiom, name, term_id)
         end
 
       _ ->
