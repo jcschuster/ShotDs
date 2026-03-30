@@ -18,9 +18,27 @@ defmodule ShotDs.Data.Term do
   defstruct [:id, :head, :type, bvars: [], args: [], fvars: [], max_num: 0]
 
   @typedoc """
+  Term IDs present in the global ETS table managed by `ShotDs.Stt.TermFactory`
+  are represented as positive integers.
+  """
+  @type global_term_id :: pos_integer()
+
+  @typedoc """
+  Term IDs that are only created and consumed locally and managed in a local
+  "scratchpad" ETS table are represented as negative integers.
+  """
+  @type local_term_id :: neg_integer()
+
+  @typedoc """
+  Preliminary or dummy term IDs are assigned 0 as their ID. Those are never
+  present in an ETS table.
+  """
+  @type dummy_term_id :: 0
+
+  @typedoc """
   A term's id is given by an atomic positive integer where 0 denotes a dummy.
   """
-  @type term_id :: non_neg_integer()
+  @type term_id :: global_term_id() | local_term_id() | dummy_term_id()
 
   @typedoc """
   The type of a term. The fields `:id`, `:head` and `:type` are required.

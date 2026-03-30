@@ -1,5 +1,5 @@
 defmodule ShotDs.Stt.TermFactory do
-  @moduledoc groups: [:"Term Cache", :"Term Construction API"]
+  @moduledoc groups: [:"Term Cache", :"Term Scratchpad", :"Term Construction API"]
   @moduledoc """
   Contains functionality of creating, memoizing and accessing terms using an
   ETS cache.
@@ -28,6 +28,87 @@ defmodule ShotDs.Stt.TermFactory do
   @table :term_pool
   @dummy_id 0
 
+  @doc group: :"Term Scratchpad"
+  @doc """
+  Creates a local "scratchpad" ETS table for the current process. Can be used to
+  cleanup temporary free variable terms e.g., when creating abstraction terms.
+
+  Puts the reference to the ETS table in the processes memory under the
+  `:term_scratchpad` key.
+  """
+  def start_scratchpad do
+    table = :ets.new(:scratchpad, [:set, :private])
+    :ets.insert(table, {:id_counter, 0})
+    Process.put(:term_scratchpad, table)
+  end
+
+  @doc group: :"Term Scratchpad"
+  @doc """
+  Destroys the processes ephemeral ETS table explicitly.
+
+  > #### Note {: .info}
+  >
+  > The scratchpad ETS table also dies with the process automatically.
+  """
+  def stop_scratchpad do
+    if table = Process.get(:term_scratchpad) do
+      :ets.delete(table)
+      Process.delete(:term_scratchpad)
+    end
+  end
+
+  @doc group: :"Term Scratchpad"
+  @doc """
+  Commits the term with the given ID (which might be local) to the global ETS
+  table. Returns the new global ID.
+
+  Also ensures recursively that the arguments are memoized.
+  """
+  def commit_to_global(id) when id > 0, do: id
+
+  def commit_to_global(id) when id < 0 do
+    %Term{} = term = get_term(id)
+
+    committed_args = Enum.map(term.args, &commit_to_global/1)
+
+    draft_term = %Term{term | args: committed_args}
+
+    signature = get_signature(draft_term)
+
+    case :ets.lookup(@table, signature) do
+      [{^signature, existing_id}] -> existing_id
+      [] -> generate_concurrent_id(draft_term)
+    end
+  end
+
+  @doc group: :"Term Scratchpad"
+  @doc """
+  Wraps the given function and executes it with an active scratchpad. Commits
+  the final result to the global ETS table Cleans up the scratchpad afterwards
+  if it didn't exist previously. Acts as a concurrency-safe garbage collector.
+  """
+  def with_scratchpad(fun) do
+    my_responsibility? = is_nil(Process.get(:term_scratchpad))
+
+    if my_responsibility? do
+      start_scratchpad()
+    end
+
+    try do
+      result_id = fun.()
+
+      if my_responsibility? do
+        commit_to_global(result_id)
+      else
+        result_id
+      end
+    after
+      if my_responsibility? do
+        stop_scratchpad()
+      end
+    end
+  end
+
   @doc group: :"Term Cache"
   @doc """
   Memoizes the given term in the module's `:ets` table. Terms will be
@@ -35,6 +116,11 @@ defmodule ShotDs.Stt.TermFactory do
 
   Returns the looked up or generated ID of the term. ID's are generated as
   positive integers in a concurrency-safe way.
+
+  > #### Note {: .info}
+  >
+  > If a scratchpad is active, the term is written to the local ETS table.
+  > Otherwise, it writes globally.
 
   ## Example:
 
@@ -51,7 +137,25 @@ defmodule ShotDs.Stt.TermFactory do
         existing_id
 
       [] ->
-        generate_concurrent_id(draft_term)
+        if local_table = Process.get(:term_scratchpad) do
+          memoize_local(draft_term, signature, local_table)
+        else
+          generate_concurrent_id(draft_term)
+        end
+    end
+  end
+
+  defp memoize_local(%Term{} = draft_term, signature, local_table) do
+    case :ets.lookup(local_table, signature) do
+      [{^signature, existing_id}] ->
+        existing_id
+
+      [] ->
+        new_id = :ets.update_counter(local_table, :id_counter, {2, -1})
+        term = %Term{draft_term | id: new_id}
+        :ets.insert(local_table, {new_id, term})
+        :ets.insert(local_table, {signature, new_id})
+        new_id
     end
   end
 
@@ -86,19 +190,22 @@ defmodule ShotDs.Stt.TermFactory do
 
   @doc group: :"Term Cache"
   @doc """
-  Looks up and returns the concrete `ShotDs.Data.Term` struct for the given
-  ID. Terms are ensured to exist in the module's ETS cache if they are solely
+  Looks up and returns the concrete `ShotDs.Data.Term` struct for the given ID.
+  Terms are ensured to exist in the module's ETS cache if they are solely
   generated via the provided API in this module.
+
+  Routes to global or local ETS table based on the sign of the ID.
   """
   @spec get_term(Term.term_id()) :: Term.t()
-  def get_term(id) do
-    case :ets.lookup(@table, id) do
-      [] ->
-        raise "Terms should only be constructed via the TermFactory module, not via struct initialization!"
+  def get_term(id) when id > 0 do
+    [{^id, term}] = :ets.lookup(@table, id)
+    term
+  end
 
-      [{^id, term}] ->
-        term
-    end
+  def get_term(id) when id < 0 do
+    local_table = Process.get(:term_scratchpad) || raise "Scratchpad missing for local ID #{id}!"
+    [{^id, term}] = :ets.lookup(local_table, id)
+    term
   end
 
   ##############################################################################
@@ -128,7 +235,9 @@ defmodule ShotDs.Stt.TermFactory do
 
       memoize(%Term{id: @dummy_id, head: decl, type: type, fvars: fvars, max_num: max_num})
     else
-      make_eta_expanded(decl, fvars)
+      with_scratchpad(fn ->
+        make_eta_expanded(decl, fvars)
+      end)
     end
   end
 
@@ -172,6 +281,11 @@ defmodule ShotDs.Stt.TermFactory do
   Creates a fresh variable of the given type and returns the ID for its term
   representation. Short for
   `ShotDs.Data.Declaration.fresh_var(type) |> make_term()`.
+
+  > #### Note {: .info}
+  >
+  > Consider wrapping functions using this to create temporary free variables
+  > with `with_scratchpad/1` for garbage collection.
   """
   @spec make_fresh_var_term(Type.t()) :: Term.term_id()
   def make_fresh_var_term(%Type{} = type) do

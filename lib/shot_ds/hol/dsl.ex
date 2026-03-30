@@ -86,8 +86,11 @@ defmodule ShotDs.Hol.Dsl do
       iex> forall([Type.new(:o, [:o, :o]), Type.new(:o), Type.new(:o)], fn r, x, y -> ... end)
   """
   @spec forall([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
-  def forall(var_types, body_fn) when is_list(var_types) and is_function(body_fn),
-    do: build_quantified_term(var_types, body_fn, &pi_term/1)
+  def forall(var_types, body_fn) when is_list(var_types) and is_function(body_fn) do
+    TF.with_scratchpad(fn ->
+      build_quantified_term(var_types, body_fn, &pi_term/1)
+    end)
+  end
 
   def forall(%Type{} = t, body_fn) when is_function(body_fn),
     do: forall([t], body_fn)
@@ -102,8 +105,11 @@ defmodule ShotDs.Hol.Dsl do
       iex> exists([Type.new(:o, [:o, :o]), Type.new(:o), Type.new(:o)], fn r, x, y -> ... end)
   """
   @spec exists([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
-  def exists(var_types, body_fn) when is_list(var_types) and is_function(body_fn),
-    do: build_quantified_term(var_types, body_fn, &sigma_term/1)
+  def exists(var_types, body_fn) when is_list(var_types) and is_function(body_fn) do
+    TF.with_scratchpad(fn ->
+      build_quantified_term(var_types, body_fn, &sigma_term/1)
+    end)
+  end
 
   def exists(%Type{} = t, body_fn) when is_function(body_fn),
     do: exists([t], body_fn)
@@ -145,14 +151,16 @@ defmodule ShotDs.Hol.Dsl do
   """
   @spec lambda([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
   def lambda(var_types, body_fn) when is_function(body_fn) do
-    decls =
-      var_types
-      |> List.wrap()
-      |> List.flatten()
-      |> Enum.map(&Declaration.fresh_var/1)
+    TF.with_scratchpad(fn ->
+      decls =
+        var_types
+        |> List.wrap()
+        |> List.flatten()
+        |> Enum.map(&Declaration.fresh_var/1)
 
-    var_terms = Enum.map(decls, &TF.make_term/1)
-    body_term_id = apply(body_fn, var_terms)
-    List.foldr(decls, body_term_id, &TF.make_abstr_term(&2, &1))
+      var_terms = Enum.map(decls, &TF.make_term/1)
+      body_term_id = apply(body_fn, var_terms)
+      List.foldr(decls, body_term_id, &TF.make_abstr_term(&2, &1))
+    end)
   end
 end
