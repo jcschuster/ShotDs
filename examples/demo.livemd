@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:shot_ds, "~> 0.4"}
+  {:shot_ds, "~> 0.5"}
 ])
 ```
 
@@ -16,7 +16,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 0.4"}
+    {:shot_ds, "~> 0.5"}
   ]
 end
 ```
@@ -139,3 +139,5 @@ case TF.get_term(true_term() ||| false_term()) do
   _ -> IO.puts("No match")
 end
 ```
+
+__Garbage Collection__: Wrapping code with `ShotDs.Stt.TermFactory.with_scratchpad/1` ensures temporary terms created by that code to be garbage collected afterwards. In this process, terms are written to a local ETS table and only the final result is (recursively) committed to the global table.

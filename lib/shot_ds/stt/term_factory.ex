@@ -4,11 +4,11 @@ defmodule ShotDs.Stt.TermFactory do
   Contains functionality of creating, memoizing and accessing terms using an
   ETS cache.
 
-  In Hol, terms often share sub-expressions, meaning they form Directed Acyclic
+  In HOL, terms often share sub-expressions, meaning they form Directed Acyclic
   Graphs (DAGs) rather than simple abstract syntax trees (ASTs). Hence,
   representing terms as nested sturctures has the big disadvantage of needing
   to store the same sub-expression multiple times in memory. ETS, the Erlang
-  Term Storage offers an efficient caching mechanism which we can utilize to
+  term storage offers an efficient caching mechanism which we can utilize to
   ensure that a specific term is created exactly once. Furthermore, Elixir's
   immutability ensures pointers to the terms being static, i.e., a term can not
   be altered once it is memoized.
@@ -36,10 +36,12 @@ defmodule ShotDs.Stt.TermFactory do
   Puts the reference to the ETS table in the processes memory under the
   `:term_scratchpad` key.
   """
+  @spec start_scratchpad() :: :ok
   def start_scratchpad do
     table = :ets.new(:scratchpad, [:set, :private])
     :ets.insert(table, {:id_counter, 0})
     Process.put(:term_scratchpad, table)
+    :ok
   end
 
   @doc group: :"Term Scratchpad"
@@ -50,11 +52,14 @@ defmodule ShotDs.Stt.TermFactory do
   >
   > The scratchpad ETS table also dies with the process automatically.
   """
+  @spec stop_scratchpad() :: :ok
   def stop_scratchpad do
     if table = Process.get(:term_scratchpad) do
       :ets.delete(table)
       Process.delete(:term_scratchpad)
     end
+
+    :ok
   end
 
   @doc group: :"Term Scratchpad"
@@ -64,6 +69,9 @@ defmodule ShotDs.Stt.TermFactory do
 
   Also ensures recursively that the arguments are memoized.
   """
+  @spec commit_to_global(Term.local_term_id() | Term.global_term_id()) :: Term.global_term_id()
+  def commit_to_global(id)
+
   def commit_to_global(id) when id > 0, do: id
 
   def commit_to_global(id) when id < 0 do
@@ -87,6 +95,7 @@ defmodule ShotDs.Stt.TermFactory do
   the final result to the global ETS table Cleans up the scratchpad afterwards
   if it didn't exist previously. Acts as a concurrency-safe garbage collector.
   """
+  @spec with_scratchpad((-> Term.term_id())) :: Term.term_id()
   def with_scratchpad(fun) do
     my_responsibility? = is_nil(Process.get(:term_scratchpad))
 
@@ -114,8 +123,9 @@ defmodule ShotDs.Stt.TermFactory do
   Memoizes the given term in the module's `:ets` table. Terms will be
   identified if they share the same *signature*, e.g., all fields but `id`.
 
-  Returns the looked up or generated ID of the term. ID's are generated as
-  positive integers in a concurrency-safe way.
+  Returns the looked up or generated ID of the term. IDs are generated as
+  integers in a concurrency-safe way. Local IDs are represented by negative,
+  global ones by positive integers.
 
   > #### Note {: .info}
   >
@@ -128,7 +138,7 @@ defmodule ShotDs.Stt.TermFactory do
       iex> %{t | id: id} == get_term(id)
       true
   """
-  @spec memoize(Term.t()) :: Term.term_id()
+  @spec memoize(Term.t()) :: Term.global_term_id() | Term.local_term_id()
   def memoize(%Term{} = draft_term) do
     signature = get_signature(draft_term)
 
@@ -197,6 +207,8 @@ defmodule ShotDs.Stt.TermFactory do
   Routes to global or local ETS table based on the sign of the ID.
   """
   @spec get_term(Term.term_id()) :: Term.t()
+  def get_term(id)
+
   def get_term(id) when id > 0 do
     [{^id, term}] = :ets.lookup(@table, id)
     term
