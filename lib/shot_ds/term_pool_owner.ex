@@ -14,7 +14,6 @@ defmodule ShotDs.TermPoolOwner do
       write_concurrency: true
     ])
 
-    # The first value returned by :ets.update_counter/3 will be 1
     :ets.insert(:term_pool, {:id_counter, 0})
 
     {:ok, %{}}

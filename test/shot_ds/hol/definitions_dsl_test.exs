@@ -25,9 +25,9 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
   end
 
   test "Definitions derived connectives are constructed from primitives" do
-    rendered_xor = Definitions.xor_term() |> Formatter.format_term()
-    rendered_nor = Definitions.nor_term() |> Formatter.format_term()
-    rendered_nand = Definitions.nand_term() |> Formatter.format_term()
+    rendered_xor = Definitions.xor_term() |> Formatter.format_term!()
+    rendered_nor = Definitions.nor_term() |> Formatter.format_term!()
+    rendered_nand = Definitions.nand_term() |> Formatter.format_term!()
 
     assert String.contains?(rendered_xor, "¬")
     assert String.contains?(rendered_xor, "≡")
@@ -69,8 +69,8 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     assert %Term{type: %Type{goal: :o}} = term!(single)
     assert %Term{type: %Type{goal: :o}} = term!(multi)
 
-    assert Formatter.format_term(single) |> String.contains?("Π")
-    assert Formatter.format_term(multi) |> String.contains?("Σ")
+    assert Formatter.format_term!(single) |> String.contains?("Π")
+    assert Formatter.format_term!(multi) |> String.contains?("Σ")
   end
 
   test "Definitions.leibniz_equality/2 builds lambda terms with expected connective" do
@@ -89,9 +89,9 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}, %Type{goal: :i}]}} =
              term!(conv_imp)
 
-    assert Formatter.format_term(eqv) |> String.contains?("≡")
-    assert Formatter.format_term(imp) |> String.contains?("⊃")
-    assert Formatter.format_term(conv_imp) |> String.contains?("⊃")
+    assert Formatter.format_term!(eqv) |> String.contains?("≡")
+    assert Formatter.format_term!(imp) |> String.contains?("⊃")
+    assert Formatter.format_term!(conv_imp) |> String.contains?("⊃")
   end
 
   test "Definitions.andrews_equality/1 constructs reflexive equality" do
@@ -102,7 +102,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
              term!(andrews_eq)
 
     # Should contain reflexivity check and implication
-    rendered = Formatter.format_term(andrews_eq)
+    rendered = Formatter.format_term!(andrews_eq)
     assert String.contains?(rendered, "Π")
   end
 
@@ -112,7 +112,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
 
     assert %Term{type: %Type{goal: :o, args: [^ii, ^ii]}} = term!(ext_eq)
 
-    rendered = Formatter.format_term(ext_eq)
+    rendered = Formatter.format_term!(ext_eq)
     assert String.contains?(rendered, "Π")
     assert String.contains?(rendered, "=")
   end
@@ -157,10 +157,10 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
   end
 
   test "Definitions creates derived logical terms" do
-    rendered_implied = Definitions.implied_by_term() |> Formatter.format_term()
+    rendered_implied = Definitions.implied_by_term() |> Formatter.format_term!()
     assert String.contains?(rendered_implied, "⊃")
 
-    rendered_nand = Definitions.nand_term() |> Formatter.format_term()
+    rendered_nand = Definitions.nand_term() |> Formatter.format_term!()
     assert String.contains?(rendered_nand, "∧")
     assert String.contains?(rendered_nand, "¬")
   end
@@ -194,7 +194,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     assert %Term{type: %Type{goal: :o}} = term
 
     # Check that it has multiple binders
-    rendered = Formatter.format_term(multi)
+    rendered = Formatter.format_term!(multi)
     assert String.contains?(rendered, "Π")
   end
 

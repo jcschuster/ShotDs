@@ -100,9 +100,9 @@ defmodule ShotDs.ParserEdgeCasesTest do
     nand = Parser.parse("$true ~& $false") |> ok!()
 
     assert %Term{head: %Declaration{name: "⊃"}} = term!(implied_by)
-    assert Formatter.format_term(xor) |> String.contains?("¬")
-    assert Formatter.format_term(nor) |> String.contains?("¬")
-    assert Formatter.format_term(nand) |> String.contains?("¬")
+    assert Formatter.format_term!(xor) |> String.contains?("¬")
+    assert Formatter.format_term!(nor) |> String.contains?("¬")
+    assert Formatter.format_term!(nand) |> String.contains?("¬")
   end
 
   test "parse/1 parentheses in lambda body" do

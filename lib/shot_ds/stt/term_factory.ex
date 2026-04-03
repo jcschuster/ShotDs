@@ -38,10 +38,13 @@ defmodule ShotDs.Stt.TermFactory do
 
   @typedoc """
   There are two error scenarios when looking up a term via its ID. The ID might
-  not be pointing to any term. Or, the ID is a _local_ ID, i.e., points to a
-  sketchpad, but no sketchpad is active for the current process.
+  not correspond to `ShotDs.Data.Term.global_term_id()` or
+  `ShotDs.Data.Term.local_term_id()`. If it does, it may not be pointing to any
+  term. Lastly, the ID can be a _local_ ID, i.e., points to a sketchpad, but no
+  sketchpad may be active for the current process.
   """
-  @type lookup_error_t :: {:error, :non_existing_id} | {:error, :scratchpad_missing}
+  @type lookup_error_t ::
+          {:error, :invalid_id} | {:error, :non_existing_id} | {:error, :scratchpad_missing}
 
   @doc group: :"Term Scratchpad"
   @doc """
@@ -303,7 +306,7 @@ defmodule ShotDs.Stt.TermFactory do
 
   Routes to global or local ETS table based on the sign of the ID.
   """
-  @spec get_term(Term.term_id()) :: {:ok, Term.t()} | lookup_error_t() | {:error, :invalid_id}
+  @spec get_term(Term.term_id()) :: {:ok, Term.t()} | lookup_error_t()
   def get_term(id)
 
   def get_term(id) when not is_integer(id) or id == 0, do: {:error, :invalid_id}
@@ -624,42 +627,24 @@ defmodule ShotDs.Stt.TermFactory do
   @spec make_appl_term(Term.term_id(), Term.term_id()) ::
           {:ok, Term.term_id()} | lookup_error_t() | {:error, :incompatible_types}
   def make_appl_term(left_id, right_id) do
-    with {:ok, %Term{} = left_term} <- get_term(left_id),
+    with {:ok, %Term{bvars: [_b | bs]} = left_term} <- get_term(left_id),
          {:ok, %Term{} = right_term} <- get_term(right_id),
          %Type{goal: goal_type, args: [arg1 | rest_types]} <- left_term.type,
          ^arg1 <- right_term.type do
       new_type = Type.new(goal_type, rest_types)
 
-      case left_term.bvars do
-        [] ->
-          new_args = left_term.args ++ [right_id]
-          new_fvars = Enum.uniq(left_term.fvars ++ right_term.fvars)
-          new_max_num = max(left_term.max_num, right_term.max_num)
+      body_term = %Term{
+        left_term
+        | bvars: bs,
+          type: new_type,
+          max_num: left_term.max_num - 1
+      }
 
-          new_term = %Term{
-            left_term
-            | args: new_args,
-              type: new_type,
-              fvars: new_fvars,
-              max_num: new_max_num
-          }
+      body_id = memoize(body_term)
 
-          {:ok, memoize(new_term)}
-
-        [_b | bs] ->
-          body_term = %Term{
-            left_term
-            | bvars: bs,
-              type: new_type,
-              max_num: left_term.max_num - 1
-          }
-
-          body_id = memoize(body_term)
-
-          case instantiate(body_id, 1, right_id) do
-            {:ok, {reduced_id, _cache}} -> {:ok, reduced_id}
-            {:error, reason} -> {:error, reason}
-          end
+      case instantiate(body_id, 1, right_id) do
+        {:ok, {reduced_id, _cache}} -> {:ok, reduced_id}
+        {:error, reason} -> {:error, reason}
       end
     else
       {:error, :non_existing_id} -> {:error, :non_existing_id}
@@ -681,39 +666,22 @@ defmodule ShotDs.Stt.TermFactory do
   """
   @spec make_appl_term!(Term.term_id(), Term.term_id()) :: Term.term_id()
   def make_appl_term!(left_id, right_id) do
-    with {:ok, %Term{} = left_term} <- get_term(left_id),
+    with {:ok, %Term{bvars: [_b | bs]} = left_term} <- get_term(left_id),
          {:ok, %Term{} = right_term} <- get_term(right_id),
          %Type{goal: goal_type, args: [arg1 | rest_types]} <- left_term.type,
          ^arg1 <- right_term.type do
       new_type = Type.new(goal_type, rest_types)
 
-      case left_term.bvars do
-        [] ->
-          new_args = left_term.args ++ [right_id]
-          new_fvars = Enum.uniq(left_term.fvars ++ right_term.fvars)
-          new_max_num = max(left_term.max_num, right_term.max_num)
+      body_term = %Term{
+        left_term
+        | bvars: bs,
+          type: new_type,
+          max_num: left_term.max_num - 1
+      }
 
-          %Term{
-            left_term
-            | args: new_args,
-              type: new_type,
-              fvars: new_fvars,
-              max_num: new_max_num
-          }
-          |> memoize()
-
-        [_b | bs] ->
-          body_term = %Term{
-            left_term
-            | bvars: bs,
-              type: new_type,
-              max_num: left_term.max_num - 1
-          }
-
-          body_id = memoize(body_term)
-          {reduced_id, _cache} = instantiate!(body_id, 1, right_id)
-          reduced_id
-      end
+      body_id = memoize(body_term)
+      {reduced_id, _cache} = instantiate!(body_id, 1, right_id)
+      reduced_id
     else
       {:error, :non_existing_id} ->
         raise ArgumentError,

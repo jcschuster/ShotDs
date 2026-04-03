@@ -21,13 +21,15 @@ defmodule ShotDs.Tptp do
   This function serves two purposes: parsing a file from the TPTP problem
   library (https://tptp.org/TPTP/) or a custom problem file given by the user.
 
-  `is_tptp` indicates whether it is a file from the TPTP problem library and
-  can be accessed via the environment variable `TPTP_ROOT` pointing to the root
+  `origin` indicates whether it is a file from the TPTP problem library and can
+  be accessed via the environment variable `TPTP_ROOT` pointing to the root
   directory of the TPTP library.
   """
-  @spec parse_tptp_file(String.t(), boolean()) :: {:ok, Problem.t()} | {:error, String.t()}
-  def parse_tptp_file(problem, is_tptp \\ true) when is_binary(problem) do
-    with {:ok, path} <- resolve_path(problem, is_tptp),
+  @spec parse_tptp_file(String.t(), :tptp_problem | :tptp_relative | :custom) ::
+          {:ok, Problem.t()} | {:error, String.t()}
+  def parse_tptp_file(problem, origin \\ :tptp_problem)
+      when is_binary(problem) and origin in [:tptp_problem, :tptp_relative, :custom] do
+    with {:ok, path} <- resolve_path(problem, origin),
          {:ok, content} <- File.read(path) do
       parse_tptp_string(content, path)
     else
@@ -60,14 +62,33 @@ defmodule ShotDs.Tptp do
 
   # --- Path Resolution Helpers ---
 
-  defp resolve_path(problem, true = _is_tptp) do
+  defp resolve_path(problem, :tptp_problem) do
+    case System.get_env("TPTP_ROOT") do
+      nil ->
+        {:error, "TPTP Parser Error: TPTP_ROOT environment variable is not set"}
+
+      root ->
+        domain = String.slice(problem, 0..2)
+
+        with_file_ending =
+          if String.ends_with?(problem, ".p") do
+            problem
+          else
+            problem <> ".p"
+          end
+
+        {:ok, Path.join([root, "Problems", domain, with_file_ending])}
+    end
+  end
+
+  defp resolve_path(problem, :tptp_relative) do
     case System.get_env("TPTP_ROOT") do
       nil -> {:error, "TPTP Parser Error: TPTP_ROOT environment variable is not set"}
       root -> {:ok, Path.join(root, problem)}
     end
   end
 
-  defp resolve_path(problem, false = _is_tptp), do: {:ok, problem}
+  defp resolve_path(problem, :custom), do: {:ok, problem}
 
   # --- Token Processing ---
 
@@ -86,10 +107,9 @@ defmodule ShotDs.Tptp do
     file_path = String.trim(raw_file_path, "'")
 
     if file_path == problem.path do
-      # Return error tuple instead of raising
       {:error, "TPTP Parser Error: Cyclic import of #{file_path}"}
     else
-      case parse_tptp_file(file_path) do
+      case parse_tptp_file(file_path, :tptp_relative) do
         {:ok, included_problem} ->
           problem
           |> merge_problems(included_problem)

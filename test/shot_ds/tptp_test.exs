@@ -49,7 +49,7 @@ defmodule ShotDs.TptpTest do
 
     File.write!(path, "thf(ax,axiom,$true).")
 
-    assert {:ok, problem} = Tptp.parse_tptp_file(path, false)
+    assert {:ok, problem} = Tptp.parse_tptp_file(path, :custom)
     assert problem.path == path
     assert problem.axioms != []
   end
@@ -60,7 +60,7 @@ defmodule ShotDs.TptpTest do
 
     System.delete_env("TPTP_ROOT")
 
-    assert {:error, msg} = Tptp.parse_tptp_file("foo.p", true)
+    assert {:error, msg} = Tptp.parse_tptp_file("foo.p")
     assert String.contains?(msg, "TPTP_ROOT")
   end
 
@@ -72,7 +72,14 @@ defmodule ShotDs.TptpTest do
     System.put_env("TPTP_ROOT", dir)
 
     inc_path = Path.join(dir, "inc.p")
-    main_path = Path.join(dir, "main.p")
+
+    problems_dir = Path.join(dir, "Problems")
+    domain_dir = Path.join(problems_dir, "TST")
+
+    File.mkdir_p!(problems_dir)
+    File.mkdir_p!(domain_dir)
+
+    main_path = Path.join(domain_dir, "TSTmain.p")
 
     File.write!(inc_path, "thf(a_t,type,a:$i). thf(ax_inc,axiom,$true).")
 
@@ -81,7 +88,7 @@ defmodule ShotDs.TptpTest do
       "include('inc.p'). thf(cj,conjecture,$true)."
     )
 
-    assert {:ok, problem} = Tptp.parse_tptp_file("main.p", true)
+    assert {:ok, problem} = Tptp.parse_tptp_file("TSTmain.p")
 
     assert Enum.any?(problem.includes, &String.ends_with?(&1, "inc.p"))
     assert Map.has_key?(problem.types, "a")

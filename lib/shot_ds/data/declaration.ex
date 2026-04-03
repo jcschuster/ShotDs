@@ -95,7 +95,7 @@ defmodule ShotDs.Data.Declaration do
   def fresh_const(%Type{} = t), do: new_const(make_ref(), t)
 
   @spec format(t(), boolean()) :: String.t()
-  def format(%__MODULE__{kind: kind, name: name, type: type}, hide_type \\ false) do
+  def format(%__MODULE__{kind: kind, name: name, type: type}, hide_type \\ true) do
     prefix = if is_reference(name), do: kind_prefix(kind), else: ""
     suffix = if hide_type, do: "", else: "_#{type}"
     prefix <> format_name(name) <> suffix

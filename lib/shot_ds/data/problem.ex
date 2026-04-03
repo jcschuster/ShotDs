@@ -51,3 +51,57 @@ defmodule ShotDs.Data.Problem do
           conjecture: {String.t(), Term.term_id()} | nil
         }
 end
+
+defimpl String.Chars, for: ShotDs.Data.Problem do
+  def to_string(%{
+        path: path,
+        includes: includes,
+        types: types,
+        definitions: defs,
+        axioms: axioms,
+        conjecture: conjecture
+      }) do
+    name_string = "Problem " <> if path in ["", "memory"], do: "<unnamed>", else: path
+
+    includes_string =
+      if Enum.empty?(includes) do
+        ""
+      else
+        "\nincludes: " <> Enum.join(includes, ", ")
+      end
+
+    types_string =
+      if Enum.empty?(types) do
+        ""
+      else
+        "\nTypes: " <>
+          Enum.map_join(types, ", ", fn
+            {name, :base_type} -> "#{name} (base type)"
+            {name, type} -> "#{name}::#{type}"
+          end)
+      end
+
+    defs_string =
+      if Enum.empty?(defs) do
+        ""
+      else
+        "\nDepends on #{map_size(defs)} definitions: {#{Enum.map_join(defs, ", ", fn {c, _t} -> Kernel.to_string(c) end)}}"
+      end
+
+    axioms_string =
+      if Enum.empty?(axioms) do
+        ""
+      else
+        "\n#{length(axioms)} axioms: {#{Enum.map_join(axioms, ", ", fn {c, _t} -> Kernel.to_string(c) end)}}"
+      end
+
+    conjecture_string =
+      case conjecture do
+        nil -> "\nNo conjecture provided"
+        {name, _term} -> "\nDefines conjecture: #{name}"
+      end
+
+    name_string <>
+      includes_string <> types_string <> defs_string <> axioms_string <> conjecture_string
+  end
+end

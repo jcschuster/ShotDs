@@ -4,22 +4,22 @@ defmodule ShotDs.Util.FormatterTraversalTest do
   alias ShotDs.Parser
   alias ShotDs.Util.TermTraversal
 
-  test "format_term/2 prints connectives with readable symbols" do
+  test "format_term!/2 prints connectives with readable symbols" do
     term_id = Parser.parse("$true & ~ $false") |> ok!()
 
-    rendered = Formatter.format_term(term_id)
+    rendered = Formatter.format_term!(term_id, false)
 
     assert String.contains?(rendered, "∧")
     assert String.contains?(rendered, "¬")
     assert String.contains?(rendered, "_o")
   end
 
-  test "format_term/2 works for term structs and hide_types" do
-    term_id = Parser.parse("$true | $false") |> ok!()
+  test "format_term!/2 works for term structs and hide_types" do
+    term_id = Parser.parse!("$true | $false") |> ok!()
     term = term!(term_id)
 
-    assert Formatter.format_term(term, false) == Formatter.format_term(term_id, false)
-    refute String.contains?(Formatter.format_term(term_id, true), "_")
+    assert Formatter.format_term!(term, false) == Formatter.format_term!(term_id, false)
+    refute String.contains?(Formatter.format_term!(term_id, true), "_")
   end
 
   test "format_substitution/2 renders replacement slash variable" do

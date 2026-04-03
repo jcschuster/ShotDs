@@ -12,6 +12,25 @@ defmodule ShotDs do
   alias ShotDs.Util.Formatter
 
   @doc """
+  Handles the `~THF` sigil for parsing TH0 formulas.
+
+  Returns the assigned global or local term ID. Raises a
+  `ShotDs.Parser.ParseError` if the syntax is invalid.
+
+  Delegates the function call to `ShotDs.Hol.Sigils.sigil_THF/2`.
+
+  ## Examples:
+
+      iex> ~THF<X & a> |> format_term()
+      "X ∧ a"
+
+      iex> ~THF"X @ Y" |> format_term(_hide_types = false)
+      "(X_T[OUFDH]>o Y_T[OUFDH])_o"
+  """
+  @spec sigil_THF(String.t(), [char()]) :: Term.term_id()
+  defdelegate sigil_THF(string, flags), to: ShotDs.Hol.Sigils
+
+  @doc """
   Parses a given string representing a formula in TH0 syntax with full type
   inference. Types which can't be inferred are assigned type variables.
   Variables on the outermost level are identified with type o. Returns the
@@ -21,10 +40,10 @@ defmodule ShotDs do
 
   ## Examples:
 
-      iex> parse!("X & a") |> format_term(true)
+      iex> parse!("X & a") |> format_term()
       "X ∧ a"
 
-      iex> parse!("X @ Y") |> format_term()
+      iex> parse!("X @ Y") |> format_term(_hide_types = false)
       "(X_T[OUFDH]>o Y_T[OUFDH])_o"
   """
   @spec parse!(String.t()) :: Term.term_id()
@@ -78,14 +97,15 @@ defmodule ShotDs do
   `ShotDs.Data.Problem` struct. Returns `{:error, reason}` if a problem
   occurred.
 
-  `is_tptp` indicates whether it is a file from the TPTP problem library and
-  can be accessed via the environment variable `TPTP_ROOT` pointing to the root
+  `origin` indicates whether it is a file from the TPTP problem library and can
+  be accessed via the environment variable `TPTP_ROOT` pointing to the root
   directory of the TPTP library.
 
   Delegates the function call to `ShotDs.Tptp.parse_tptp_file/1`.
   """
-  @spec parse_tptp_file(String.t(), boolean()) :: {:ok, Problem.t()} | {:error, String.t()}
-  defdelegate parse_tptp_file(path, is_tptp), to: Tptp
+  @spec parse_tptp_file(String.t(), :tptp_problem | :tptp_relative | :custom) ::
+          {:ok, Problem.t()} | {:error, String.t()}
+  defdelegate parse_tptp_file(path, origin), to: Tptp
 
   @doc """
   Parses a string representing a full problem file in TPTP's TH0 syntax into a
@@ -158,19 +178,19 @@ defmodule ShotDs do
   recursively traversing term DAGs. This is implemented for singular types,
   declarations, terms and substitutions.
 
-  Delegates the function call to `ShotDs.Util.Formatter.format/1`.
+  Delegates the function call to `ShotDs.Util.Formatter.format!/1`.
   """
-  @spec format(Type.t() | Declaration.t() | Term.t() | Substitution.t()) :: String.t()
-  defdelegate format(hol_object), to: Formatter
+  @spec format!(Type.t() | Declaration.t() | Term.t() | Substitution.t()) :: String.t()
+  defdelegate format!(hol_object), to: Formatter
 
   @doc """
   Pretty-prints the given HOL object taking the ETS cache into accout for
   recursively traversing term DAGs. This is implemented for singular types,
-  declarations, terms and substitutions. Type annotations can be hidden for
-  better readability by setting `true` as second argument.
+  declarations, terms and substitutions. Type annotations may be displayed by
+  setting the second field to `false`.
 
-  Delegates the function call to `ShotDs.Util.Formatter.format/1`.
+  Delegates the function call to `ShotDs.Util.Formatter.format!/1`.
   """
-  @spec format(Type.t() | Declaration.t() | Term.t() | Substitution.t(), boolean()) :: String.t()
-  defdelegate format(hol_object, hide_types), to: Formatter
+  @spec format!(Type.t() | Declaration.t() | Term.t() | Substitution.t(), boolean()) :: String.t()
+  defdelegate format!(hol_object, hide_types), to: Formatter
 end

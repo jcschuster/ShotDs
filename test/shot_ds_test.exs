@@ -42,7 +42,7 @@ defmodule ShotDsTest do
     path = Path.join(dir, "problem.p")
     File.write!(path, "thf(ax,axiom,$true).")
 
-    assert ShotDs.parse_tptp_file(path, false) == Tptp.parse_tptp_file(path, false)
+    assert ShotDs.parse_tptp_file(path, :custom) == Tptp.parse_tptp_file(path, :custom)
   end
 
   test "construction delegates build terms with expected shapes" do
@@ -70,12 +70,12 @@ defmodule ShotDsTest do
     assert ShotDs.app(f, [x]) == app(f, [x])
   end
 
-  test "format delegates match Formatter for arities 1 and 2" do
+  test "format! delegates match Formatter for arities 1 and 2" do
     term_id = ShotDs.parse!("$true & $false")
     term = term!(term_id)
 
-    assert ShotDs.format(term) == Formatter.format(term)
-    assert ShotDs.format(term, true) == Formatter.format(term, true)
+    assert ShotDs.format!(term) == Formatter.format!(term)
+    assert ShotDs.format!(term, true) == Formatter.format!(term, true)
   end
 
   defp mk_tmp_dir do

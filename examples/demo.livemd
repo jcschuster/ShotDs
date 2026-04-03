@@ -17,7 +17,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 0.5"}
+    {:shot_ds, "~> 1.0"}
   ]
 end
 ```
@@ -60,7 +60,7 @@ exclusive_or = lambda([type_o(), type_o()], fn p, q ->
   (p ||| q) &&& neg(p &&& q)
 end)
 
-format(exclusive_or, true) |> IO.puts()
+format(exclusive_or) |> IO.puts()
 ```
 
 ## Parsing TH0 Strings
@@ -71,14 +71,14 @@ The module `ShotDs.Parser` offers powerful parsing capabilities with full type i
 alias ShotDs.Parser
 
 Parser.parse!("?[X : $o]: X => $true")
-|> format(true) |> IO.puts()
+|> format() |> IO.puts()
 ```
 
 Note that the type inference engine assumes type $o$ for the outermost type unless inferable otherwise. Other unknown types are treated as _type variables_ and are assigned a unique ID:
 
 ```elixir
 Parser.parse!("X @ a")
-|> format() |> IO.puts()
+|> format(_hide_types = false) |> IO.puts()
 ```
 
 To clear up ambiguities, we can pass in a _type environment_:

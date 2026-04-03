@@ -39,14 +39,14 @@ defmodule ShotDs.ParserTest do
     term_id = Parser.parse("![X]: X = X") |> ok!()
 
     assert %Term{type: %Type{goal: :o, args: []}} = term!(term_id)
-    assert Formatter.format_term(term_id) |> String.contains?("Π")
+    assert Formatter.format_term!(term_id) |> String.contains?("Π")
   end
 
   test "parse/1 expands derived connective xor into negated equivalence" do
     term_id = Parser.parse("$true <~> $false") |> ok!()
 
-    assert Formatter.format_term(term_id) |> String.contains?("¬")
-    assert Formatter.format_term(term_id) |> String.contains?("≡")
+    assert Formatter.format_term!(term_id) |> String.contains?("¬")
+    assert Formatter.format_term!(term_id) |> String.contains?("≡")
   end
 
   test "parse_tokens/2 parses token lists produced by the lexer" do
@@ -130,10 +130,10 @@ defmodule ShotDs.ParserTest do
     nor = Parser.parse("$true ~| $false") |> ok!()
     nand = Parser.parse("$true ~& $false") |> ok!()
 
-    assert Formatter.format_term(nor) |> String.contains?("¬")
-    assert Formatter.format_term(nor) |> String.contains?("∨")
-    assert Formatter.format_term(nand) |> String.contains?("¬")
-    assert Formatter.format_term(nand) |> String.contains?("∧")
+    assert Formatter.format_term!(nor) |> String.contains?("¬")
+    assert Formatter.format_term!(nor) |> String.contains?("∨")
+    assert Formatter.format_term!(nand) |> String.contains?("¬")
+    assert Formatter.format_term!(nand) |> String.contains?("∧")
   end
 
   test "parse/1 handles converse implication" do
