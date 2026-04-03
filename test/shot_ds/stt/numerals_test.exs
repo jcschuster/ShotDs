@@ -21,7 +21,7 @@ defmodule ShotDs.NumeralsTest do
   end
 
   test "num/1 rejects negative numbers" do
-    assert_raise RuntimeError, ~r/only defined for natural numbers/, fn ->
+    assert_raise ArgumentError, ~r/only defined for natural numbers/, fn ->
       Numerals.num(-1)
     end
   end
@@ -61,7 +61,7 @@ defmodule ShotDs.NumeralsTest do
   end
 
   defp church_value(term_id) do
-    %Term{bvars: [s, z]} = term = TF.get_term(term_id)
+    %Term{bvars: [s, z]} = term = term!(term_id)
 
     count_apps(%Term{term | bvars: []}, s, z)
   end
@@ -69,7 +69,7 @@ defmodule ShotDs.NumeralsTest do
   defp count_apps(%Term{bvars: [], head: head, args: []}, _s, z) when head == z, do: 0
 
   defp count_apps(%Term{bvars: [], head: head, args: [inner_id]}, s, z) when head == s do
-    1 + count_apps(TF.get_term(inner_id), s, z)
+    1 + count_apps(term!(inner_id), s, z)
   end
 
   defp count_apps(term, _s, _z) do

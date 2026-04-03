@@ -81,7 +81,8 @@ defmodule ShotDs.Data.Declaration do
   > #### Note {: .info}
   >
   > Consider wrapping functions using this to create temporary free variables
-  > with `ShotDs.Stt.TermFactory.with_scratchpad/1` for garbage collection.
+  > with `ShotDs.Stt.TermFactory.with_scratchpad/1` or
+  > `ShotDs.Stt.TermFactory.with_scratchpad!/1` for garbage collection.
   """
   @spec fresh_var(Type.t()) :: free_var_t()
   def fresh_var(%Type{} = t), do: new_free_var(make_ref(), t)

@@ -227,8 +227,8 @@ defmodule ShotDs.Hol.Definitions do
     x = Declaration.new_free_var("X", type_o())
     y = Declaration.new_free_var("Y", type_o())
 
-    disj = or_term() |> TF.make_appl_term(TF.make_term(x)) |> TF.make_appl_term(TF.make_term(y))
-    neg_term() |> TF.make_appl_term(disj) |> TF.make_abstr_term(y) |> TF.make_abstr_term(x)
+    disj = or_term() |> TF.make_appl_term!(TF.make_term(x)) |> TF.make_appl_term!(TF.make_term(y))
+    neg_term() |> TF.make_appl_term!(disj) |> TF.make_abstr_term!(y) |> TF.make_abstr_term!(x)
   end
 
   @doc group: :Terms
@@ -248,11 +248,11 @@ defmodule ShotDs.Hol.Definitions do
     y = Declaration.new_free_var("Y", type_o())
 
     and_term()
-    |> TF.make_appl_term(TF.make_term(x))
-    |> TF.make_appl_term(TF.make_term(y))
-    |> then(&TF.make_appl_term(neg_term(), &1))
-    |> TF.make_abstr_term(y)
-    |> TF.make_abstr_term(x)
+    |> TF.make_appl_term!(TF.make_term(x))
+    |> TF.make_appl_term!(TF.make_term(y))
+    |> then(&TF.make_appl_term!(neg_term(), &1))
+    |> TF.make_abstr_term!(y)
+    |> TF.make_abstr_term!(x)
   end
 
   @doc group: :Terms
@@ -272,10 +272,10 @@ defmodule ShotDs.Hol.Definitions do
     y = Declaration.new_free_var("Y", type_o())
 
     implies_term()
-    |> TF.make_appl_term(TF.make_term(y))
-    |> TF.make_appl_term(TF.make_term(x))
-    |> TF.make_abstr_term(y)
-    |> TF.make_abstr_term(x)
+    |> TF.make_appl_term!(TF.make_term(y))
+    |> TF.make_appl_term!(TF.make_term(x))
+    |> TF.make_abstr_term!(y)
+    |> TF.make_abstr_term!(x)
   end
 
   @doc group: :Terms
@@ -295,11 +295,11 @@ defmodule ShotDs.Hol.Definitions do
     y = Declaration.new_free_var("Y", type_o())
 
     equivalent_term()
-    |> TF.make_appl_term(TF.make_term(x))
-    |> TF.make_appl_term(TF.make_term(y))
-    |> then(&TF.make_appl_term(neg_term(), &1))
-    |> TF.make_abstr_term(y)
-    |> TF.make_abstr_term(x)
+    |> TF.make_appl_term!(TF.make_term(x))
+    |> TF.make_appl_term!(TF.make_term(y))
+    |> then(&TF.make_appl_term!(neg_term(), &1))
+    |> TF.make_abstr_term!(y)
+    |> TF.make_abstr_term!(x)
   end
 
   @doc group: :Terms
@@ -321,11 +321,11 @@ defmodule ShotDs.Hol.Definitions do
     y = Declaration.new_free_var("Y", t)
 
     equals_term(t)
-    |> TF.make_appl_term(TF.make_term(x))
-    |> TF.make_appl_term(TF.make_term(y))
-    |> then(&TF.make_appl_term(neg_term(), &1))
-    |> TF.make_abstr_term(y)
-    |> TF.make_abstr_term(x)
+    |> TF.make_appl_term!(TF.make_term(x))
+    |> TF.make_appl_term!(TF.make_term(y))
+    |> then(&TF.make_appl_term!(neg_term(), &1))
+    |> TF.make_abstr_term!(y)
+    |> TF.make_abstr_term!(x)
   end
 
   @doc group: :Terms
@@ -379,16 +379,16 @@ defmodule ShotDs.Hol.Definitions do
     p = Declaration.new_free_var("P", p_type)
     p_term = TF.make_term(p)
 
-    p_x = TF.make_appl_term(p_term, TF.make_term(x))
-    p_y = TF.make_appl_term(p_term, TF.make_term(y))
+    p_x = TF.make_appl_term!(p_term, TF.make_term(x))
+    p_y = TF.make_appl_term!(p_term, TF.make_term(y))
 
     connective
-    |> TF.make_appl_term(p_x)
-    |> TF.make_appl_term(p_y)
-    |> TF.make_abstr_term(p)
-    |> then(&TF.make_appl_term(pi_term(p_type), &1))
-    |> TF.make_abstr_term(y)
-    |> TF.make_abstr_term(x)
+    |> TF.make_appl_term!(p_x)
+    |> TF.make_appl_term!(p_y)
+    |> TF.make_abstr_term!(p)
+    |> then(&TF.make_appl_term!(pi_term(p_type), &1))
+    |> TF.make_abstr_term!(y)
+    |> TF.make_abstr_term!(x)
   end
 
   @doc """
@@ -414,23 +414,23 @@ defmodule ShotDs.Hol.Definitions do
 
     lhs =
       q_term
-      |> TF.make_appl_term(z_term)
-      |> TF.make_appl_term(z_term)
-      |> TF.make_abstr_term(z)
-      |> then(&TF.make_appl_term(pi_term(type), &1))
+      |> TF.make_appl_term!(z_term)
+      |> TF.make_appl_term!(z_term)
+      |> TF.make_abstr_term!(z)
+      |> then(&TF.make_appl_term!(pi_term(type), &1))
 
     rhs =
       q_term
-      |> TF.make_appl_term(TF.make_term(x))
-      |> TF.make_appl_term(TF.make_term(y))
+      |> TF.make_appl_term!(TF.make_term(x))
+      |> TF.make_appl_term!(TF.make_term(y))
 
     implies_term()
-    |> TF.make_appl_term(lhs)
-    |> TF.make_appl_term(rhs)
-    |> TF.make_abstr_term(q)
-    |> then(&TF.make_appl_term(pi_term(q_type), &1))
-    |> TF.make_abstr_term(y)
-    |> TF.make_abstr_term(x)
+    |> TF.make_appl_term!(lhs)
+    |> TF.make_appl_term!(rhs)
+    |> TF.make_abstr_term!(q)
+    |> then(&TF.make_appl_term!(pi_term(q_type), &1))
+    |> TF.make_abstr_term!(y)
+    |> TF.make_abstr_term!(x)
   end
 
   @doc """
@@ -449,16 +449,16 @@ defmodule ShotDs.Hol.Definitions do
     z = Declaration.new_free_var("Z", at)
     z_term = TF.make_term(z)
 
-    x_z = TF.make_appl_term(TF.make_term(x), z_term)
-    y_z = TF.make_appl_term(TF.make_term(y), z_term)
+    x_z = TF.make_appl_term!(TF.make_term(x), z_term)
+    y_z = TF.make_appl_term!(TF.make_term(y), z_term)
 
     equals_term(%{type | args: rest_ats})
-    |> TF.make_appl_term(x_z)
-    |> TF.make_appl_term(y_z)
-    |> TF.make_abstr_term(z)
-    |> then(&TF.make_appl_term(pi_term(at), &1))
-    |> TF.make_abstr_term(y)
-    |> TF.make_abstr_term(x)
+    |> TF.make_appl_term!(x_z)
+    |> TF.make_appl_term!(y_z)
+    |> TF.make_abstr_term!(z)
+    |> then(&TF.make_appl_term!(pi_term(at), &1))
+    |> TF.make_abstr_term!(y)
+    |> TF.make_abstr_term!(x)
   end
 
   def extensional_equality(type) do

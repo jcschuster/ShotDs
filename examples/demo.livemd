@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:shot_ds, "~> 0.5"}
+  {:shot_ds, path: Path.join(__DIR__, "..")}
+  # {:shot_ds, "~> 1.0"}
 ])
 ```
 
@@ -42,7 +43,7 @@ alias ShotDs.Stt.TermFactory, as: TF
 import ShotDs.Util.Formatter # pretty-printing
 
 x_id = TF.make_free_var_term("X", Type.new(:i, [:i, :o])) |> IO.inspect(label: "assigned ID")
-TF.get_term(x_id) |> IO.inspect(label: "generated term")
+TF.get_term!(x_id) |> IO.inspect(label: "generated term")
 format(x_id, _hide_types=false) |> IO.inspect(label: "pretty-printed")
 :ok
 ```
@@ -69,14 +70,14 @@ The module `ShotDs.Parser` offers powerful parsing capabilities with full type i
 ```elixir
 alias ShotDs.Parser
 
-Parser.parse("?[X : $o]: X => $true")
+Parser.parse!("?[X : $o]: X => $true")
 |> format(true) |> IO.puts()
 ```
 
 Note that the type inference engine assumes type $o$ for the outermost type unless inferable otherwise. Other unknown types are treated as _type variables_ and are assigned a unique ID:
 
 ```elixir
-Parser.parse("X @ a")
+Parser.parse!("X @ a")
 |> format() |> IO.puts()
 ```
 
@@ -87,11 +88,15 @@ alias ShotDs.Data.Context
 
 ctx = Context.new() |> Context.put_const("a", type_i())
 
-Parser.parse("X @ a", ctx)
+Parser.parse!("X @ a", ctx)
 |> format() |> IO.puts()
 ```
 
 ## Advanced Utilities
+
+__Error Handling__: Functions that can fail return a tuple `{:ok, result}` or `{:error, reason}` per default. There are "bang" versions (suffixed by `!`) of all functions that either return the result or raise an error.
+
+<!-- livebook:{"break_markdown":true} -->
 
 __File Parsing__: `ShotDs.Tptp` includes parsing capabilities for TPTP files. The collected information is aggregated in a `ShotDs.Data.Problem` struct.
 
@@ -114,7 +119,7 @@ x_a |> format(true) |> IO.puts()
 
 s = %Substitution{fvar: x, term_id: b}
 
-Semantics.subst(s, x_a) |> format(true) |> IO.puts()
+Semantics.subst!(s, x_a) |> format(true) |> IO.puts()
 ```
 
 __Church Numerals__: `ShotDs.Stt.Numerals` provides an implementation of Church's encoding of natural numbers, adapted to simple types. This can for example be used for benchmarking.
@@ -125,7 +130,7 @@ import ShotDs.Stt.Numerals
 plus(num(5), num(2)) |> format(true) |> IO.puts()
 ```
 
-__Traversals and Transformation__: Transformations of terms mostly follow the same scheme. An optimized adaption of the combinators `fold` (`fold_term/2`) and `map` (`map_term/5`) to the DAG representation of terms is implemented in the module `ShotDs.Util.TermTraversal`. Examples for the usage of these higher-order functions can be found in the source code of the `ShotDs.Stt.Semantics` module or in `ShotDs.Util.Formatter.format_term/2`.
+__Traversals and Transformation__: Transformations of terms mostly follow the same scheme. An optimized adaption of the combinators `fold` (`fold_term/2`, `fold_term!/2`) and `map` (`map_term/5`, `map_term!/5`) to the DAG representation of terms is implemented in the module `ShotDs.Util.TermTraversal`. Examples for the usage of these higher-order functions can be found in the source code of the `ShotDs.Stt.Semantics` module or in `ShotDs.Util.Formatter.format_term/2`.
 
 <!-- livebook:{"break_markdown":true} -->
 
@@ -134,7 +139,7 @@ __Pattern Matching__: `ShotDs.Hol.Patterns` provides macro definitions for patte
 ```elixir
 use ShotDs.Hol.Patterns
 
-case TF.get_term(true_term() ||| false_term()) do
+case TF.get_term!(true_term() ||| false_term()) do
   disjunction(p, q) -> IO.puts("Disjunction of #{format(p)} and #{format(q)}")
   _ -> IO.puts("No match")
 end

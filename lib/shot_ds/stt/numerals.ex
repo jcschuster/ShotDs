@@ -4,7 +4,8 @@ defmodule ShotDs.Stt.Numerals do
 
   Church numerals are defined as lambda-abstractions which take a successor
   function *s* and a starting point *z* and returns the *n*-fold application
-  of the successor function to the starting point.
+  of the successor function to the starting point. I.e., in our encoding,
+  numerals are represented as a term of type (i->i)->i->i
 
   > #### Note {: .info}
   >
@@ -21,13 +22,19 @@ defmodule ShotDs.Stt.Numerals do
   @z %Declaration{kind: :bv, name: 1, type: @i}
 
   @doc """
+  Returns the simple type corresponding to an encoded numeral.
+  """
+  @spec n_type() :: Type.t()
+  def n_type, do: Type.new(:i, [@ii, :i])
+
+  @doc """
   Generates the Church numeral corresponding to the given natural number.
   Returns the ID of the generated term.
   """
   @spec num(non_neg_integer()) :: Term.term_id()
   def num(n) when is_integer(n) do
     if n < 0 do
-      raise "ArgumentError: Church numerals are only defined for natural numbers!"
+      raise ArgumentError, message: "Church numerals are only defined for natural numbers!"
     end
 
     lambda([type_ii(), type_i()], fn s, z ->
@@ -40,17 +47,15 @@ defmodule ShotDs.Stt.Numerals do
   numeral.
   """
   @spec num_var(Declaration.var_name_t()) :: Term.term_id()
-  def num_var(name) when is_binary(name) or is_reference(name) do
-    type_numeral = Type.new(:i, [@ii, @i])
-    TF.make_free_var_term(name, type_numeral)
-  end
+  def num_var(name) when is_binary(name) or is_reference(name),
+    do: var(name, n_type())
 
   @doc """
   Generates the successor of the Church numeral term corresponding to the given
   ID. Returns the ID of the generated term.
   """
   @spec succ(Term.term_id()) :: Term.term_id()
-  def succ(n_id) when is_integer(n_id) do
+  def succ(n_id) do
     lambda([type_ii(), type_i()], fn s, z ->
       app(s, app(n_id, [s, z]))
     end)
@@ -61,7 +66,7 @@ defmodule ShotDs.Stt.Numerals do
   the given IDs. Returns the ID of the resulting term.
   """
   @spec plus(Term.term_id(), Term.term_id()) :: Term.term_id()
-  def plus(m_id, n_id) when is_integer(m_id) and is_integer(n_id) do
+  def plus(m_id, n_id) do
     lambda([type_ii(), type_i()], fn s, z ->
       app(m_id, [s, app(n_id, [s, z])])
     end)
@@ -72,7 +77,7 @@ defmodule ShotDs.Stt.Numerals do
   with the given IDs. Returns the ID of the resulting term.
   """
   @spec mult(Term.term_id(), Term.term_id()) :: Term.term_id()
-  def mult(m_id, n_id) when is_integer(m_id) and is_integer(n_id) do
+  def mult(m_id, n_id) do
     lambda([type_ii(), type_i()], fn s, z ->
       app(m_id, [app(n_id, s), z])
     end)
@@ -84,7 +89,7 @@ defmodule ShotDs.Stt.Numerals do
   """
   @spec numeral?(Term.term_id()) :: boolean()
   def numeral?(term_id) when is_integer(term_id) do
-    %Term{} = term = TF.get_term(term_id)
+    %Term{} = term = TF.get_term!(term_id)
 
     case term do
       %Term{bvars: [@s, @z], type: %Type{args: [@ii, @i | rest]} = type} ->
@@ -98,7 +103,7 @@ defmodule ShotDs.Stt.Numerals do
   defp numeral_body?(%Term{bvars: [], head: @z, args: []}), do: true
 
   defp numeral_body?(%Term{bvars: [], head: @s, args: [inner]}),
-    do: numeral_body?(TF.get_term(inner))
+    do: numeral_body?(TF.get_term!(inner))
 
   defp numeral_body?(_), do: false
 end

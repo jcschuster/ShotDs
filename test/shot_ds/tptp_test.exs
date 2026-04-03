@@ -89,10 +89,9 @@ defmodule ShotDs.TptpTest do
     assert {"cj", _} = problem.conjecture
   end
 
-  test "parse_tptp_string/2 raises on cyclic include" do
-    assert_raise RuntimeError, ~r/Cyclic import/, fn ->
-      Tptp.parse_tptp_string("include('self.p').", "self.p")
-    end
+  test "parse_tptp_string/2 reports cyclic include" do
+    assert {:error, msg} = Tptp.parse_tptp_string("include('self.p').", "self.p")
+    assert String.contains?(msg, "Cyclic import")
   end
 
   test "parse_tptp_string/2 reports unexpected tokens" do

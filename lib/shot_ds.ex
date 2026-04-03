@@ -17,18 +17,18 @@ defmodule ShotDs do
   Variables on the outermost level are identified with type o. Returns the
   assigned ID of the created term.
 
-  Delegates the function call to `ShotDs.Parser.parse/1`.
+  Delegates the function call to `ShotDs.Parser.parse!/1`.
 
   ## Examples:
 
-      iex> parse("X & a") |> format_term(true)
+      iex> parse!("X & a") |> format_term(true)
       "X ∧ a"
 
-      iex> parse("X @ Y") |> format_term()
+      iex> parse!("X @ Y") |> format_term()
       "(X_T[OUFDH]>o Y_T[OUFDH])_o"
   """
-  @spec parse(String.t()) :: Term.term_id()
-  defdelegate parse(formula_str), to: Parser
+  @spec parse!(String.t()) :: Term.term_id()
+  defdelegate parse!(formula_str), to: Parser
 
   @doc """
   Parses a given string representing a formula in TH0 syntax with full type
@@ -37,18 +37,18 @@ defmodule ShotDs do
   assigned ID of the created term. The given `ShotDs.Data.Context` struct
   defines a type environment for resolving unknown types.
 
-  Delegates the function call to `ShotDs.Parser.parse/2`.
+  Delegates the function call to `ShotDs.Parser.parse!/2`.
 
   ## Example:
 
       iex> alias ShotDs.Data.Context
       iex> import ShotDs.Hol.Definitions
       iex> ctx = Context.new() |> Context.put_var("X", type_ii()) |> Context.put_var("Y", type_i())
-      iex> parse("X @ Y", ctx) |> format_term()
+      iex> parse!("X @ Y", ctx) |> format_term()
       "(X_i>i Y_i)_i""
   """
-  @spec parse(String.t(), Context.t()) :: Term.term_id()
-  defdelegate parse(formula_str, context), to: Parser
+  @spec parse!(String.t(), Context.t()) :: Term.term_id()
+  defdelegate parse!(formula_str, context), to: Parser
 
   @doc """
   Parses a HOL type from TPTP syntax into a `ShotDs.Data.Type` struct.

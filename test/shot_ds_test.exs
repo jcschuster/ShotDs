@@ -7,17 +7,17 @@ defmodule ShotDsTest do
   alias ShotDs.Util.{Formatter}
   import ShotDs.Hol.Dsl
 
-  test "parse delegates to Parser for arities 1 and 2" do
+  test "parse! delegates to Parser.parse! for arities 1 and 2" do
     formula = "$true => $false"
 
-    assert ShotDs.parse(formula) == Parser.parse(formula)
+    assert ShotDs.parse!(formula) == Parser.parse!(formula)
 
     ctx =
       Context.new()
       |> Context.put_const("f", Type.new(:o, :i))
       |> Context.put_var("X", Type.new(:i))
 
-    assert ShotDs.parse("f @ X", ctx) == Parser.parse("f @ X", ctx)
+    assert ShotDs.parse!("f @ X", ctx) == Parser.parse!("f @ X", ctx)
   end
 
   test "parse_type/1 delegates to Parser.parse_type/1" do
@@ -61,7 +61,7 @@ defmodule ShotDsTest do
     lambda_id = ShotDs.lambda(i, fn x -> x end)
 
     assert %Term{type: %Type{goal: :i, args: [%Type{goal: :i}]}, bvars: [_]} =
-             TF.get_term(lambda_id)
+             term!(lambda_id)
 
     f = ShotDs.make_const_term("f", Type.new(:o, :i))
     x = ShotDs.make_const_term("a", i)
@@ -71,8 +71,8 @@ defmodule ShotDsTest do
   end
 
   test "format delegates match Formatter for arities 1 and 2" do
-    term_id = ShotDs.parse("$true & $false")
-    term = TF.get_term(term_id)
+    term_id = ShotDs.parse!("$true & $false")
+    term = term!(term_id)
 
     assert ShotDs.format(term) == Formatter.format(term)
     assert ShotDs.format(term, true) == Formatter.format(term, true)

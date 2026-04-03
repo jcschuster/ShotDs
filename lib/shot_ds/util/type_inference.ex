@@ -12,12 +12,29 @@ defmodule ShotDs.Util.TypeInference do
 
   @typep general_type() :: Type.t() | reference() | atom()
 
+  defmodule TypeError do
+    defexception message: "type error"
+  end
+
   @doc """
-  Tries to solve a list of type constraints by unification. Returns the
-  computed substitution.
+  Safely tries to solve a list of type constraints by unification.
+  Returns `{:ok, substitution}` or `{:error, reason}`.
   """
-  @spec solve([{Type.t(), Type.t()}]) :: type_substitution()
+  @spec solve([{Type.t(), Type.t()}]) :: {:ok, type_substitution()} | {:error, String.t()}
   def solve(constraints) do
+    try do
+      {:ok, solve!(constraints)}
+    rescue
+      e in TypeError -> {:error, e.message}
+    end
+  end
+
+  @doc """
+  Tries to solve a list of type constraints by unification, raising a
+  `ShotDs.Util.TypeInference.TypeError` on failure.
+  """
+  @spec solve!([{Type.t(), Type.t()}]) :: type_substitution()
+  def solve!(constraints) do
     Enum.reduce(constraints, %{}, fn {t1, t2}, subst ->
       unify(apply_subst(t1, subst), apply_subst(t2, subst), subst)
     end)
@@ -60,7 +77,7 @@ defmodule ShotDs.Util.TypeInference do
 
       len1 == len2 ->
         if !is_reference(g1) && !is_reference(g2) && g1 != g2 do
-          raise "Type Error: Cannot unify concrete goals #{g1} and #{g2}."
+          raise TypeError, message: "Type Error: Cannot unify concrete goals #{g1} and #{g2}."
         end
 
         subst_after_goal = unify_terms(g1, g2, subst)
@@ -89,7 +106,7 @@ defmodule ShotDs.Util.TypeInference do
   defp unify_terms(t, ref, subst) when is_reference(ref), do: bind(ref, t, subst)
 
   defp unify_terms(t1, t2, _subst) do
-    raise "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)}"
+    raise TypeError, message: "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)}"
   end
 
   # Handles partial application unification
@@ -111,7 +128,8 @@ defmodule ShotDs.Util.TypeInference do
         subst_after_args
       )
     else
-      raise "Type Error: Cannot unify strict function types of different arities."
+      raise TypeError,
+        message: "Type Error: Cannot unify strict function types of different arities."
     end
   end
 
@@ -119,7 +137,8 @@ defmodule ShotDs.Util.TypeInference do
 
   defp bind(ref, type, subst) do
     if occurs?(ref, type) do
-      raise "Type Error: Recursive type check failed (Occurs check on #{inspect(ref)})."
+      raise TypeError,
+        message: "Type Error: Recursive type check failed (Occurs check on #{inspect(ref)})."
     end
 
     updated_subst =

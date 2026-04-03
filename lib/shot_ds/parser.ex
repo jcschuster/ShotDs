@@ -35,39 +35,96 @@ defmodule ShotDs.Parser do
       iex> parse "![X : $o]: (f @ X) | (g @ X)"
   """
 
-  alias ShotDs.Data.{Type, Declaration, Term}
+  alias ShotDs.Data.{Type, Declaration, Term, Context}
   alias ShotDs.Hol.Definitions
   alias ShotDs.Stt.TermFactory, as: TF
-  alias ShotDs.Data.Context
   alias ShotDs.Util.Lexer
   alias ShotDs.Util.TypeInference, as: TI
 
-  @dialyzer {:no_opaque, parse: 1, parse_tokens: 1}
+  @dialyzer {:no_opaque, parse: 1, parse!: 1, parse_tokens: 1, parse_tokens!: 1}
+  @dialyzer {:nowarn_function, parse!: 1}
+
+  defmodule ParseError do
+    @moduledoc """
+    An exception raised when parsing fails.
+    """
+    defexception message: "parse error"
+  end
 
   @doc """
-  Parses a given string representing a formula in TH0 syntax with full type
-  inference. Types which can't be inferred are assigned type variables.
+  Safely parses a given string representing a formula in TH0 syntax with full
+  type inference. Types which can't be inferred are assigned type variables.
   Variables on the outermost level are identified with type o. Returns the
   assigned ID of the created term.
 
+  Returns `{:ok, term_id}` or `{:error, reason}`
+
   ## Example:
 
-      iex> parse("X & a") |> format_term(true)
+      iex> match?({:ok, _parsed}, parse("X & a"))
+      true
+
+      iex> match?({:ok, _parsed}, parse("X &"))
+      false
+  """
+  @spec parse(String.t(), Context.t()) :: {:ok, Term.term_id()} | {:error, String.t()}
+  def parse(formula_str, context \\ Context.new()) do
+    try do
+      {:ok, parse!(formula_str, context)}
+    rescue
+      e in ParseError -> {:error, e.message}
+      _e in MatchError -> {:error, "Unexpected syntax or unhandled token sequence."}
+      e in TI.TypeError -> {:error, e.message}
+    end
+  end
+
+  @doc """
+  Safely parses a given string representing a formula in TH0 syntax with full
+  type inference, raising a `ShotDs.Parser.ParseError` if invalid. Types which
+  can't be inferred are assigned type variables. Variables on the outermost
+  level are identified with type o. Returns the assigned ID of the created term.
+
+  ## Example:
+
+      iex> parse!("X & a") |> format_term(_hide_types = true)
       "X ∧ a"
 
-      iex> parse("X @ Y") |> format_term()
+      iex> parse!("X @ Y") |> format_term()
       "(X_T[OUFDH]>o Y_T[OUFDH])_o"
 
       iex> alias ShotDs.Data.Context
       iex> import ShotDs.Hol.Definitions
       iex> ctx = Context.new() |> Context.put_var("X", type_ii()) |> Context.put_var("Y", type_i())
-      iex> parse("X @ Y", ctx) |> format_term()
+      iex> parse!("X @ Y", ctx) |> format_term()
       "(X_i>i Y_i)_i"
   """
-  @spec parse(String.t(), Context.t()) :: Term.term_id()
-  def parse(formula_str, context \\ Context.new()) do
-    {:ok, tokens, "", _, _, _} = Lexer.tokenize(formula_str)
-    parse_tokens(tokens, context)
+  @spec parse!(String.t(), Context.t()) :: Term.term_id()
+  def parse!(formula_str, context \\ Context.new()) do
+    case Lexer.tokenize(formula_str) do
+      {:ok, tokens, "", _, _, _} ->
+        parse_tokens!(tokens, context)
+
+      {:ok, _, unparsed, _, _, _} ->
+        raise ParseError, message: "Lexer stopped early. Unparsed content: #{unparsed}"
+    end
+  end
+
+  @doc """
+  Safely parses a given list of tokens with full type inference. Types which
+  can't be inferred are assigned type variables. Variables on the outermost
+  level are identified with type o. Returns the assigned ID of the created term.
+
+  Returns `{:ok, term_id}` or `{:error, reason}`.
+  """
+  @spec parse_tokens(Lexer.tokens(), Context.t()) :: {:ok, Term.term_id()} | {:error, String.t()}
+  def parse_tokens(tokens, context \\ Context.new()) do
+    try do
+      {:ok, parse_tokens!(tokens, context)}
+    rescue
+      e in ParseError -> {:error, e.message}
+      _e in MatchError -> {:error, "Unexpected syntax or unhandled token sequence."}
+      e in TI.TypeError -> {:error, e.message}
+    end
   end
 
   @doc """
@@ -78,15 +135,15 @@ defmodule ShotDs.Parser do
   ## Example:
 
       iex> {:ok, tokens, _, _, _, _} = Lexer.tokenize("$false")
-      iex> parse_tokens(tokens) |> format_term(true)
+      iex> parse_tokens!(tokens) |> format_term(true)
       "⊥"
   """
-  @spec parse_tokens(Lexer.tokens(), Context.t()) :: Term.term_id()
-  def parse_tokens(tokens, context \\ Context.new()) do
+  @spec parse_tokens!(Lexer.tokens(), Context.t()) :: Term.term_id()
+  def parse_tokens!(tokens, context \\ Context.new()) do
     {pre_term, [], almost_final_ctx} = parse_formula(tokens, context)
     root_type = get_pre_type(pre_term)
 
-    substitutions = TI.solve(almost_final_ctx.constraints)
+    substitutions = TI.solve!(almost_final_ctx.constraints)
     resolved_root = TI.apply_subst(root_type, substitutions)
 
     final_ctx =
@@ -96,8 +153,8 @@ defmodule ShotDs.Parser do
         almost_final_ctx
       end
 
-    final_substitutions = TI.solve(final_ctx.constraints)
-    build_term(pre_term, final_substitutions)
+    final_substitutions = TI.solve!(final_ctx.constraints)
+    build_term!(pre_term, final_substitutions)
   end
 
   ################################### TYPES ####################################
@@ -149,59 +206,56 @@ defmodule ShotDs.Parser do
   # TERM BUILDER
   ##############################################################################
 
-  defp build_term({:pre_app, f, arg, _type}, subst) do
-    TF.make_appl_term(build_term(f, subst), build_term(arg, subst))
+  defp build_term!({:pre_app, f, arg, _type}, subst) do
+    TF.make_appl_term!(build_term!(f, subst), build_term!(arg, subst))
   end
 
-  defp build_term({:pre_abs, name, var_type, body, _type}, subst) do
+  defp build_term!({:pre_abs, name, var_type, body, _type}, subst) do
     concrete_var_type = TI.apply_subst(var_type, subst)
     decl = Declaration.new_free_var(name, concrete_var_type)
 
-    # Bottom-up DAG construction
-    body_id = build_term(body, subst)
-    TF.make_abstr_term(body_id, decl)
+    body_id = build_term!(body, subst)
+    TF.make_abstr_term!(body_id, decl)
   end
 
-  defp build_term({:pre_var, name, type}, subst) do
+  defp build_term!({:pre_var, name, type}, subst) do
     TF.make_free_var_term(name, TI.apply_subst(type, subst))
   end
 
-  defp build_term({:pre_const, "$true", _}, _), do: Definitions.true_term()
-  defp build_term({:pre_const, "$false", _}, _), do: Definitions.false_term()
-  defp build_term({:pre_const, "~", _}, _), do: Definitions.neg_term()
-  defp build_term({:pre_const, "|", _}, _), do: Definitions.or_term()
-  defp build_term({:pre_const, "&", _}, _), do: Definitions.and_term()
-  defp build_term({:pre_const, "=>", _}, _), do: Definitions.implies_term()
-  defp build_term({:pre_const, "<=>", _}, _), do: Definitions.equivalent_term()
+  defp build_term!({:pre_const, "$true", _}, _), do: Definitions.true_term()
+  defp build_term!({:pre_const, "$false", _}, _), do: Definitions.false_term()
+  defp build_term!({:pre_const, "~", _}, _), do: Definitions.neg_term()
+  defp build_term!({:pre_const, "|", _}, _), do: Definitions.or_term()
+  defp build_term!({:pre_const, "&", _}, _), do: Definitions.and_term()
+  defp build_term!({:pre_const, "=>", _}, _), do: Definitions.implies_term()
+  defp build_term!({:pre_const, "<=>", _}, _), do: Definitions.equivalent_term()
 
-  # Derived Connectives
-  defp build_term({:pre_const, "<~>", _}, _), do: Definitions.xor_term()
-  defp build_term({:pre_const, "<=", _}, _), do: Definitions.implied_by_term()
-  defp build_term({:pre_const, "~|", _}, _), do: Definitions.nor_term()
-  defp build_term({:pre_const, "~&", _}, _), do: Definitions.nand_term()
+  defp build_term!({:pre_const, "<~>", _}, _), do: Definitions.xor_term()
+  defp build_term!({:pre_const, "<=", _}, _), do: Definitions.implied_by_term()
+  defp build_term!({:pre_const, "~|", _}, _), do: Definitions.nor_term()
+  defp build_term!({:pre_const, "~&", _}, _), do: Definitions.nand_term()
 
-  # Polymorphic Constants
-  defp build_term({:pre_const, "=", type}, subst) do
+  defp build_term!({:pre_const, "=", type}, subst) do
     %Type{args: [alpha, alpha]} = TI.apply_subst(type, subst)
     Definitions.equals_term(alpha)
   end
 
-  defp build_term({:pre_const, "!=", type}, subst) do
+  defp build_term!({:pre_const, "!=", type}, subst) do
     %Type{args: [alpha, alpha]} = TI.apply_subst(type, subst)
     Definitions.not_equals_term(alpha)
   end
 
-  defp build_term({:pre_const, "Π", type}, subst) do
+  defp build_term!({:pre_const, "Π", type}, subst) do
     %Type{args: [%Type{args: [alpha]}]} = TI.apply_subst(type, subst)
     Definitions.pi_term(alpha)
   end
 
-  defp build_term({:pre_const, "Σ", type}, subst) do
+  defp build_term!({:pre_const, "Σ", type}, subst) do
     %Type{args: [%Type{args: [alpha]}]} = TI.apply_subst(type, subst)
     Definitions.sigma_term(alpha)
   end
 
-  defp build_term({:pre_const, name, type}, subst) do
+  defp build_term!({:pre_const, name, type}, subst) do
     TF.make_const_term(name, TI.apply_subst(type, subst))
   end
 
@@ -476,10 +530,11 @@ defmodule ShotDs.Parser do
         {term, final_tokens, final_ctx}
 
       [{type, val} | _] ->
-        raise "Syntax Error: Expected ')', found '#{val}' (#{inspect(type)})."
+        raise ParseError,
+          message: "Syntax Error: Expected ')', found '#{val}' (#{inspect(type)})."
 
       [] ->
-        raise "Syntax Error: Unexpected end of input."
+        raise ParseError, message: "Syntax Error: Unexpected end of input."
     end
   end
 
@@ -652,10 +707,12 @@ defmodule ShotDs.Parser do
   defp parse_atomic([token | _rest], _ctx) do
     {type, value} = token
 
-    raise "Syntax Error: Expected atomic term (variable, constant, or expression), but found token '#{value}' (: #{inspect(type)})."
+    raise ParseError,
+      message:
+        "Syntax Error: Expected atomic term, but found token '#{value}' (#{inspect(type)})."
   end
 
   defp parse_atomic([], _ctx) do
-    raise "Syntax Error: Unexpected end of input."
+    raise ParseError, message: "Syntax Error: Unexpected end of input."
   end
 end

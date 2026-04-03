@@ -6,16 +6,16 @@ defmodule ShotDs.Hol.PatternsTest do
 
   describe "nullary constant patterns" do
     test "truth/0 matches only the truth term" do
-      truth_term = Definitions.true_term() |> TF.get_term()
-      falsity_term = Definitions.false_term() |> TF.get_term()
+      truth_term = Definitions.true_term() |> term!()
+      falsity_term = Definitions.false_term() |> term!()
 
       assert match?(truth(), truth_term)
       refute match?(truth(), falsity_term)
     end
 
     test "falsity/0 matches only the falsity term" do
-      truth_term = Definitions.true_term() |> TF.get_term()
-      falsity_term = Definitions.false_term() |> TF.get_term()
+      truth_term = Definitions.true_term() |> term!()
+      falsity_term = Definitions.false_term() |> term!()
 
       assert match?(falsity(), falsity_term)
       refute match?(falsity(), truth_term)
@@ -27,8 +27,8 @@ defmodule ShotDs.Hol.PatternsTest do
       p = TF.make_free_var_term("P", Type.new(:o))
       q = TF.make_free_var_term("Q", Type.new(:o))
 
-      neg_term = neg(p) |> TF.get_term()
-      disj_term = (p ||| q) |> TF.get_term()
+      neg_term = neg(p) |> term!()
+      disj_term = (p ||| q) |> term!()
 
       assert match?(negated(_), neg_term)
       refute match?(negated(_), disj_term)
@@ -38,8 +38,8 @@ defmodule ShotDs.Hol.PatternsTest do
       p = TF.make_free_var_term("P", Type.new(:o))
       q = TF.make_free_var_term("Q", Type.new(:o))
 
-      disj_term = (p ||| q) |> TF.get_term()
-      conj_term = (p &&& q) |> TF.get_term()
+      disj_term = (p ||| q) |> term!()
+      conj_term = (p &&& q) |> term!()
 
       assert match?(disjunction(_, _), disj_term)
       refute match?(disjunction(_, _), conj_term)
@@ -49,8 +49,8 @@ defmodule ShotDs.Hol.PatternsTest do
       p = TF.make_free_var_term("P", Type.new(:o))
       q = TF.make_free_var_term("Q", Type.new(:o))
 
-      disj_term = (p ||| q) |> TF.get_term()
-      conj_term = (p &&& q) |> TF.get_term()
+      disj_term = (p ||| q) |> term!()
+      conj_term = (p &&& q) |> term!()
 
       assert match?(conjunction(_, _), conj_term)
       refute match?(conjunction(_, _), disj_term)
@@ -60,8 +60,8 @@ defmodule ShotDs.Hol.PatternsTest do
       p = TF.make_free_var_term("P", Type.new(:o))
       q = TF.make_free_var_term("Q", Type.new(:o))
 
-      imp_term = p ~> q |> TF.get_term()
-      eqv_term = p <~> q |> TF.get_term()
+      imp_term = p ~> q |> term!()
+      eqv_term = p <~> q |> term!()
 
       assert match?(implication(_, _), imp_term)
       refute match?(implication(_, _), eqv_term)
@@ -71,8 +71,8 @@ defmodule ShotDs.Hol.PatternsTest do
       p = TF.make_free_var_term("P", Type.new(:o))
       q = TF.make_free_var_term("Q", Type.new(:o))
 
-      imp_term = p ~> q |> TF.get_term()
-      eqv_term = p <~> q |> TF.get_term()
+      imp_term = p ~> q |> term!()
+      eqv_term = p <~> q |> term!()
 
       assert match?(equivalence(_, _), eqv_term)
       refute match?(equivalence(_, _), imp_term)
@@ -85,8 +85,8 @@ defmodule ShotDs.Hol.PatternsTest do
       x = TF.make_free_var_term("X", i)
       y = TF.make_free_var_term("Y", i)
 
-      eq_term = eq(x, y) |> TF.get_term()
-      neq_term = neq(x, y) |> TF.get_term()
+      eq_term = eq(x, y) |> term!()
+      neq_term = neq(x, y) |> term!()
 
       assert match?(equality(_, _), eq_term)
       refute match?(equality(_, _), neq_term)
@@ -99,7 +99,7 @@ defmodule ShotDs.Hol.PatternsTest do
       x = TF.make_free_var_term("X", i)
       y = TF.make_free_var_term("Y", i)
 
-      eq_term = eq(x, y) |> TF.get_term()
+      eq_term = eq(x, y) |> term!()
 
       assert match?(typed_equality(_, _, i), eq_term)
       refute match?(typed_equality(_, _, ^o), eq_term)
@@ -112,7 +112,7 @@ defmodule ShotDs.Hol.PatternsTest do
         forall(Type.new(:i), fn x ->
           eq(x, x)
         end)
-        |> TF.get_term()
+        |> term!()
 
       assert match?(universal_quantification(_), term)
     end
@@ -122,7 +122,7 @@ defmodule ShotDs.Hol.PatternsTest do
         exists(Type.new(:i), fn x ->
           eq(x, x)
         end)
-        |> TF.get_term()
+        |> term!()
 
       assert match?(existential_quantification(_), term)
     end

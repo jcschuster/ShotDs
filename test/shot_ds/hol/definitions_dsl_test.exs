@@ -18,10 +18,10 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     assert %Declaration{name: "⊥", kind: :co} = Definitions.false_const()
 
     assert %Term{head: %Declaration{name: "⊤"}, type: %Type{goal: :o}} =
-             Definitions.true_term() |> TF.get_term()
+             Definitions.true_term() |> term!()
 
     assert %Term{head: %Declaration{name: "⊥"}, type: %Type{goal: :o}} =
-             Definitions.false_term() |> TF.get_term()
+             Definitions.false_term() |> term!()
   end
 
   test "Definitions derived connectives are constructed from primitives" do
@@ -39,11 +39,11 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     a = Definitions.true_term()
     b = Definitions.false_term()
 
-    assert %Term{head: %Declaration{name: "¬"}} = neg(a) |> TF.get_term()
-    assert %Term{head: %Declaration{name: "∨"}} = (a ||| b) |> TF.get_term()
-    assert %Term{head: %Declaration{name: "∧"}} = (a &&& b) |> TF.get_term()
-    assert %Term{head: %Declaration{name: "⊃"}} = a ~> b |> TF.get_term()
-    assert %Term{head: %Declaration{name: "≡"}} = a <~> b |> TF.get_term()
+    assert %Term{head: %Declaration{name: "¬"}} = neg(a) |> term!()
+    assert %Term{head: %Declaration{name: "∨"}} = (a ||| b) |> term!()
+    assert %Term{head: %Declaration{name: "∧"}} = (a &&& b) |> term!()
+    assert %Term{head: %Declaration{name: "⊃"}} = a ~> b |> term!()
+    assert %Term{head: %Declaration{name: "≡"}} = a <~> b |> term!()
   end
 
   test "Dsl equality helpers infer the left-hand side type" do
@@ -54,8 +54,8 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     eq_term = eq(x, y)
     neq_term = neq(x, y)
 
-    assert %Term{head: %Declaration{name: "="}, type: %Type{goal: :o}} = TF.get_term(eq_term)
-    assert %Term{head: %Declaration{name: "¬"}, type: %Type{goal: :o}} = TF.get_term(neq_term)
+    assert %Term{head: %Declaration{name: "="}, type: %Type{goal: :o}} = term!(eq_term)
+    assert %Term{head: %Declaration{name: "¬"}, type: %Type{goal: :o}} = term!(neq_term)
   end
 
   test "Dsl quantifiers support single and multiple variable arities" do
@@ -66,8 +66,8 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
         eq(x, y)
       end)
 
-    assert %Term{type: %Type{goal: :o}} = TF.get_term(single)
-    assert %Term{type: %Type{goal: :o}} = TF.get_term(multi)
+    assert %Term{type: %Type{goal: :o}} = term!(single)
+    assert %Term{type: %Type{goal: :o}} = term!(multi)
 
     assert Formatter.format_term(single) |> String.contains?("Π")
     assert Formatter.format_term(multi) |> String.contains?("Σ")
@@ -81,13 +81,13 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     conv_imp = Definitions.leibniz_equality(i, :conv_imp)
 
     assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}, %Type{goal: :i}]}} =
-             TF.get_term(eqv)
+             term!(eqv)
 
     assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}, %Type{goal: :i}]}} =
-             TF.get_term(imp)
+             term!(imp)
 
     assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}, %Type{goal: :i}]}} =
-             TF.get_term(conv_imp)
+             term!(conv_imp)
 
     assert Formatter.format_term(eqv) |> String.contains?("≡")
     assert Formatter.format_term(imp) |> String.contains?("⊃")
@@ -99,7 +99,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     andrews_eq = Definitions.andrews_equality(i)
 
     assert %Term{type: %Type{goal: :o, args: [%Type{goal: :i}, %Type{goal: :i}]}} =
-             TF.get_term(andrews_eq)
+             term!(andrews_eq)
 
     # Should contain reflexivity check and implication
     rendered = Formatter.format_term(andrews_eq)
@@ -110,7 +110,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     ii = Type.new(:i, :i)
     ext_eq = Definitions.extensional_equality(ii)
 
-    assert %Term{type: %Type{goal: :o, args: [^ii, ^ii]}} = TF.get_term(ext_eq)
+    assert %Term{type: %Type{goal: :o, args: [^ii, ^ii]}} = term!(ext_eq)
 
     rendered = Formatter.format_term(ext_eq)
     assert String.contains?(rendered, "Π")
@@ -149,11 +149,11 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
   end
 
   test "Definitions creates all logical operator terms" do
-    assert %Term{head: %Declaration{name: "¬"}} = Definitions.neg_term() |> TF.get_term()
-    assert %Term{head: %Declaration{name: "∨"}} = Definitions.or_term() |> TF.get_term()
-    assert %Term{head: %Declaration{name: "∧"}} = Definitions.and_term() |> TF.get_term()
-    assert %Term{head: %Declaration{name: "⊃"}} = Definitions.implies_term() |> TF.get_term()
-    assert %Term{head: %Declaration{name: "≡"}} = Definitions.equivalent_term() |> TF.get_term()
+    assert %Term{head: %Declaration{name: "¬"}} = Definitions.neg_term() |> term!()
+    assert %Term{head: %Declaration{name: "∨"}} = Definitions.or_term() |> term!()
+    assert %Term{head: %Declaration{name: "∧"}} = Definitions.and_term() |> term!()
+    assert %Term{head: %Declaration{name: "⊃"}} = Definitions.implies_term() |> term!()
+    assert %Term{head: %Declaration{name: "≡"}} = Definitions.equivalent_term() |> term!()
   end
 
   test "Definitions creates derived logical terms" do
@@ -168,29 +168,29 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
   test "Definitions creates polymorphic terms" do
     i = Type.new(:i)
     eq_i = Definitions.equals_term(i)
-    assert %Term{head: %Declaration{name: "="}} = TF.get_term(eq_i)
+    assert %Term{head: %Declaration{name: "="}} = term!(eq_i)
 
     neq_i = Definitions.not_equals_term(i)
-    assert %Term{head: %Declaration{name: "¬"}} = TF.get_term(neq_i)
+    assert %Term{head: %Declaration{name: "¬"}} = term!(neq_i)
 
     pi_i = Definitions.pi_term(i)
-    assert %Term{head: %Declaration{name: "Π"}} = TF.get_term(pi_i)
+    assert %Term{head: %Declaration{name: "Π"}} = term!(pi_i)
 
     sigma_i = Definitions.sigma_term(i)
-    assert %Term{head: %Declaration{name: "Σ"}} = TF.get_term(sigma_i)
+    assert %Term{head: %Declaration{name: "Σ"}} = term!(sigma_i)
   end
 
   test "Dsl expr operators work with variables" do
     o = Type.new(:o)
     x = TF.make_free_var_term("X", o)
 
-    assert %Term{type: %Type{goal: :o}} = neg(x) |> TF.get_term()
+    assert %Term{type: %Type{goal: :o}} = neg(x) |> term!()
   end
 
   test "Dsl forall with multiple variables creates nested quantifiers" do
     multi = forall([Type.new(:i), Type.new(:i)], fn x, y -> eq(x, y) end)
 
-    term = TF.get_term(multi)
+    term = term!(multi)
     assert %Term{type: %Type{goal: :o}} = term
 
     # Check that it has multiple binders
@@ -202,7 +202,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     i = Type.new(:i)
     x = TF.make_free_var_term("X", i)
 
-    str = to_string(TF.get_term(x))
+    str = to_string(term!(x))
     assert is_binary(str)
     assert String.contains?(str, "X")
   end
@@ -210,7 +210,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
   test "String.Chars protocol for lambda terms" do
     lambda_id = lambda(Type.new(:i), fn x -> x end)
 
-    str = to_string(TF.get_term(lambda_id))
+    str = to_string(term!(lambda_id))
     assert is_binary(str)
     assert String.contains?(str, "λ")
   end
@@ -220,7 +220,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     x = TF.make_const_term("a", Type.new(:i))
     app = TF.make_appl_term(f, x)
 
-    str = to_string(TF.get_term(app))
+    str = to_string(term!(app))
     assert is_binary(str)
     assert String.contains?(str, "f")
   end

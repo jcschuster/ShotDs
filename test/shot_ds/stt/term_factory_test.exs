@@ -24,7 +24,7 @@ defmodule ShotDs.Stt.TermFactoryTest do
       # IDs should be strictly identical due to hash-consing
       assert id1 == id2
 
-      term = TF.get_term(id1)
+      term = TF.get_term!(id1)
       assert term.head == decl
       assert term.type == @i
       assert term.fvars == [decl]
@@ -33,7 +33,7 @@ defmodule ShotDs.Stt.TermFactoryTest do
     test "automatically eta-expands function types" do
       decl = Declaration.new_free_var("F", @i_to_i)
       id = TF.make_term(decl)
-      term = TF.get_term(id)
+      term = TF.get_term!(id)
 
       # Should be wrapped in 1 binder: λv1. F(v1)
       assert length(term.bvars) == 1
@@ -44,7 +44,7 @@ defmodule ShotDs.Stt.TermFactoryTest do
 
       # It should be applied to 1 argument (the bound variable)
       assert length(term.args) == 1
-      arg_term = TF.get_term(hd(term.args))
+      arg_term = TF.get_term!(hd(term.args))
       assert arg_term.head.kind == :bv
       # De Bruijn index 1
       assert arg_term.head.name == 1
@@ -60,23 +60,21 @@ defmodule ShotDs.Stt.TermFactoryTest do
       x_id = TF.make_term(x_decl)
 
       # Applying F (i -> i) to X (i) should return a term of type (i)
-      app_id = TF.make_appl_term(f_id, x_id)
-      app_term = TF.get_term(app_id)
+      assert {:ok, app_id} = TF.make_appl_term(f_id, x_id)
+      app_term = TF.get_term!(app_id)
 
       assert app_term.type == @i
     end
 
-    test "violently rejects invalid applications (Type Check)" do
+    test "safely rejects invalid applications (Type Check)" do
       x_decl = Declaration.new_free_var("X", @i)
       y_decl = Declaration.new_free_var("Y", @i)
 
       x_id = TF.make_term(x_decl)
       y_id = TF.make_term(y_decl)
 
-      # X has type :i (expects 0 args). Applying Y should trigger a MatchError
-      assert_raise MatchError, fn ->
-        TF.make_appl_term(x_id, y_id)
-      end
+      # X has type :i (expects 0 args). Applying Y should return an error tuple.
+      assert {:error, :incompatible_types} = TF.make_appl_term(x_id, y_id)
     end
   end
 end

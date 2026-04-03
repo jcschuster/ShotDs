@@ -22,7 +22,7 @@ $$\tau \coloneqq \iota \mid o \mid \tau\to\tau$$
 
 $o$ is the type for booleans, containing the values $\mathtt{T}$ and
 $\mathtt{F}$ while $\iota$ denotes the (nonempty) set of individuals.
-UNote that type construction is right-associative, i.e.,
+Note that type construction is right-associative, i.e.,
 $\alpha\to(\beta\to\gamma) = \alpha\to\beta\to\gamma$.
 
 The terms of classical HOL are those from STT with respect to some HOL

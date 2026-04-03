@@ -7,7 +7,7 @@ defmodule ShotDs.Util.TypeInferenceTest do
   test "solve/1 unifies a fresh variable with a concrete type" do
     tvar = Type.fresh_type_var()
 
-    subst = TI.solve([{tvar, Type.new(:o)}])
+    {:ok, subst} = TI.solve([{tvar, Type.new(:o)}])
 
     assert TI.apply_subst(tvar, subst) == Type.new(:o)
     assert Map.get(subst, tvar.goal) == :o
@@ -18,7 +18,7 @@ defmodule ShotDs.Util.TypeInferenceTest do
     short = Type.new(ref, :i)
     long = Type.new(:o, [:i, :i])
 
-    subst = TI.solve([{short, long}])
+    {:ok, subst} = TI.solve([{short, long}])
 
     assert TI.apply_subst(Type.new(ref), subst) == Type.new(:o, :i)
     assert TI.apply_subst(short, subst) == long
@@ -35,16 +35,16 @@ defmodule ShotDs.Util.TypeInferenceTest do
   end
 
   test "solve/1 raises on incompatible concrete goals" do
-    assert_raise RuntimeError, ~r/Cannot unify concrete goals/, fn ->
-      TI.solve([{Type.new(:o), Type.new(:i)}])
+    assert_raise TI.TypeError, ~r/Cannot unify concrete goals/, fn ->
+      TI.solve!([{Type.new(:o), Type.new(:i)}])
     end
   end
 
   test "solve/1 raises on recursive types via occurs check" do
     ref = make_ref()
 
-    assert_raise RuntimeError, ~r/Occurs check/, fn ->
-      TI.solve([{Type.new(ref), Type.new(:o, Type.new(ref))}])
+    assert_raise TI.TypeError, ~r/Occurs check/, fn ->
+      TI.solve!([{Type.new(ref), Type.new(:o, Type.new(ref))}])
     end
   end
 
@@ -58,7 +58,7 @@ defmodule ShotDs.Util.TypeInferenceTest do
       {Type.new(:o, Type.new(r2)), Type.new(:o, :i)}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     assert TI.apply_subst(Type.new(r1), subst) == Type.new(:i)
     assert TI.apply_subst(Type.new(r2), subst) == Type.new(:i)
@@ -68,8 +68,8 @@ defmodule ShotDs.Util.TypeInferenceTest do
     ref = make_ref()
 
     # ref should unify with :o in both directions
-    subst1 = TI.solve([{Type.new(ref), Type.new(:o)}])
-    subst2 = TI.solve([{Type.new(:o), Type.new(ref)}])
+    {:ok, subst1} = TI.solve([{Type.new(ref), Type.new(:o)}])
+    {:ok, subst2} = TI.solve([{Type.new(:o), Type.new(ref)}])
 
     assert TI.apply_subst(Type.new(ref), subst1) == Type.new(:o)
     assert TI.apply_subst(Type.new(ref), subst2) == Type.new(:o)
@@ -90,7 +90,7 @@ defmodule ShotDs.Util.TypeInferenceTest do
     short_type = Type.new(ref, :i)
     long_type = Type.new(:o, [:i, :i])
 
-    subst = TI.solve([{short_type, long_type}])
+    {:ok, subst} = TI.solve([{short_type, long_type}])
 
     # ref should unify to something that, when applied to i, gives o
     resolved = TI.apply_subst(Type.new(ref), subst)
@@ -109,7 +109,7 @@ defmodule ShotDs.Util.TypeInferenceTest do
   end
 
   test "solve/1 with empty constraints returns empty substitution" do
-    subst = TI.solve([])
+    {:ok, subst} = TI.solve([])
 
     assert subst == %{}
   end
@@ -124,7 +124,7 @@ defmodule ShotDs.Util.TypeInferenceTest do
     ref = make_ref()
 
     # ref with 1 arg should unify with o with 2 args
-    subst = TI.solve([{Type.new(ref, [:i]), Type.new(:o, [:i, :i])}])
+    {:ok, subst} = TI.solve([{Type.new(ref, [:i]), Type.new(:o, [:i, :i])}])
 
     # ref should become o with an extra i argument
     resolved = TI.apply_subst(Type.new(ref), subst)

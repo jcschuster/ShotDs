@@ -86,17 +86,18 @@ defmodule ShotDs.Tptp do
     file_path = String.trim(raw_file_path, "'")
 
     if file_path == problem.path do
-      raise "TPTP Parser Error: Cyclic import of #{file_path}"
-    end
+      # Return error tuple instead of raising
+      {:error, "TPTP Parser Error: Cyclic import of #{file_path}"}
+    else
+      case parse_tptp_file(file_path) do
+        {:ok, included_problem} ->
+          problem
+          |> merge_problems(included_problem)
+          |> then(&process_tokens(rest, &1))
 
-    case parse_tptp_file(file_path) do
-      {:ok, included_problem} ->
-        problem
-        |> merge_problems(included_problem)
-        |> then(&process_tokens(rest, &1))
-
-      error ->
-        error
+        error ->
+          error
+      end
     end
   end
 
@@ -111,64 +112,68 @@ defmodule ShotDs.Tptp do
          ],
          problem
        ) do
-    {formula_tokens, remaining_tokens} = extract_formula(rest)
-
-    new_problem =
-      if role == :type do
-        {entry_name, type_struct} = parse_type_decl(formula_tokens)
-        %{problem | types: Map.put(problem.types, entry_name, type_struct)}
-      else
-        ctx = build_context(problem)
-        term_id = Parser.parse_tokens(formula_tokens, ctx)
-        update_problem_statements(problem, role, name, term_id)
-      end
-
-    process_tokens(remaining_tokens, new_problem)
+    with {:ok, formula_tokens, remaining_tokens} <- extract_formula(rest),
+         {:ok, new_problem} <- handle_thf_role(role, name, formula_tokens, problem) do
+      process_tokens(remaining_tokens, new_problem)
+    end
   end
 
   defp process_tokens([{token_type, value} | _], _problem) do
     {:error, "Unexpected token: '#{value}' (#{inspect(token_type)})"}
   end
 
+  defp handle_thf_role(:type, _name, formula_tokens, problem) do
+    {entry_name, type_struct} = parse_type_decl(formula_tokens)
+    {:ok, %{problem | types: Map.put(problem.types, entry_name, type_struct)}}
+  end
+
+  defp handle_thf_role(role, name, formula_tokens, problem) do
+    ctx = build_context(problem)
+
+    with {:ok, term_id} <- Parser.parse_tokens(formula_tokens, ctx),
+         {:ok, new_problem} <- update_problem_statements(problem, role, name, term_id) do
+      {:ok, new_problem}
+    else
+      {:error, reason} -> {:error, "Failed to parse formula '#{name}': #{reason}"}
+    end
+  end
+
   # --- Problem Struct Updaters ---
 
   defp update_problem_statements(problem, :definition, name, term_id) do
-    case TF.get_term(term_id) do
-      equality(lhs, rhs) ->
-        %Term{head: decl} = TF.get_term(lhs)
-
-        is_valid_const = match?(%Declaration{kind: :co}, decl)
-
-        if is_valid_const do
-          %{problem | definitions: Map.put(problem.definitions, decl, rhs)}
-        else
-          update_problem_statements(problem, :axiom, name, term_id)
-        end
-
-      _ ->
-        raise "TPTP Parser Error: Definition is not a valid equation."
+    with {:ok, equality(lhs, rhs)} <- TF.get_term(term_id),
+         {:ok, %Term{head: decl}} <- TF.get_term(lhs) do
+      if match?(%Declaration{kind: :co}, decl) do
+        {:ok, %{problem | definitions: Map.put(problem.definitions, decl, rhs)}}
+      else
+        update_problem_statements(problem, :axiom, name, term_id)
+      end
+    else
+      {:ok, _} -> {:error, "Invalid LHS in definition."}
+      _ -> {:error, "Definition is not a valid equation."}
     end
   end
 
   defp update_problem_statements(problem, role, name, term_id)
        when role in [:axiom, :hypothesis, :lemma, :assumption] do
-    %{problem | axioms: problem.axioms ++ [{name, term_id}]}
+    {:ok, %{problem | axioms: problem.axioms ++ [{name, term_id}]}}
   end
 
   defp update_problem_statements(problem, :conjecture, name, term_id) do
-    %{problem | conjecture: {name, term_id}}
+    {:ok, %{problem | conjecture: {name, term_id}}}
   end
 
-  defp update_problem_statements(problem, _role, _name, _term_id), do: problem
+  defp update_problem_statements(problem, _role, _name, _term_id), do: {:ok, problem}
 
   # --- Formula Extraction ---
 
   defp extract_formula(tokens), do: split_at_entry_end(tokens, 0, [])
 
-  defp split_at_entry_end([{:rparen, _}, {:dot, _} | rest], 0, acc), do: {Enum.reverse(acc), rest}
+  defp split_at_entry_end([{:rparen, _}, {:dot, _} | rest], 0, acc),
+    do: {:ok, Enum.reverse(acc), rest}
 
   defp split_at_entry_end([], _depth, _acc) do
-    raise "TPTP Parser Error: Unexpected end of file. Missing ' thf( ... ). ' closing sequence."
+    {:error, "Unexpected end of file. Missing ' thf( ... ). ' closing sequence."}
   end
 
   defp split_at_entry_end([{:lparen, _} = t | rest], depth, acc),
@@ -177,7 +182,8 @@ defmodule ShotDs.Tptp do
   defp split_at_entry_end([{:rparen, _} = t | rest], depth, acc),
     do: split_at_entry_end(rest, depth - 1, [t | acc])
 
-  defp split_at_entry_end([t | rest], depth, acc), do: split_at_entry_end(rest, depth, [t | acc])
+  defp split_at_entry_end([t | rest], depth, acc),
+    do: split_at_entry_end(rest, depth, [t | acc])
 
   # --- Type & Context Helpers ---
 

@@ -13,6 +13,18 @@ defmodule ShotDs.TermFactoryCase do
       alias ShotDs.Stt.Semantics
       alias ShotDs.Stt.TermFactory, as: TF
       alias ShotDs.Util.{Formatter, Lexer, TypeInference}
+
+      defp ok!(value_or_result)
+
+      defp ok!({:ok, value}), do: value
+
+      defp ok!({:error, reason}) do
+        flunk("Expected {:ok, value}, got {:error, #{inspect(reason)}}")
+      end
+
+      defp ok!(value), do: value
+
+      defp term!(id_or_result), do: id_or_result |> ok!() |> TF.get_term!()
     end
   end
 

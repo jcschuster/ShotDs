@@ -35,6 +35,16 @@ defmodule ShotDs.Hol.Dsl do
   alias ShotDs.Data.{Type, Declaration, Term}
   alias ShotDs.Stt.TermFactory, as: TF
 
+  @doc """
+  Primitive term representing a constant symbol of the given type.
+  """
+  def const(name, type), do: TF.make_const_term(name, type)
+
+  @doc """
+  Primitive term representing a variable symbol of the given type.
+  """
+  def var(name, type), do: TF.make_free_var_term(name, type)
+
   @doc "Logical Negation"
   @spec neg(Term.term_id()) :: Term.term_id()
   def neg(a), do: app(neg_term(), a)
@@ -63,7 +73,7 @@ defmodule ShotDs.Hol.Dsl do
   """
   @spec eq(Term.term_id(), Term.term_id()) :: Term.term_id()
   def eq(a, b) do
-    term_a = TF.get_term(a)
+    term_a = TF.get_term!(a)
     app(equals_term(term_a.type), [a, b])
   end
 
@@ -87,7 +97,7 @@ defmodule ShotDs.Hol.Dsl do
   """
   @spec forall([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
   def forall(var_types, body_fn) when is_list(var_types) and is_function(body_fn) do
-    TF.with_scratchpad(fn ->
+    TF.with_scratchpad!(fn ->
       build_quantified_term(var_types, body_fn, &pi_term/1)
     end)
   end
@@ -106,7 +116,7 @@ defmodule ShotDs.Hol.Dsl do
   """
   @spec exists([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
   def exists(var_types, body_fn) when is_list(var_types) and is_function(body_fn) do
-    TF.with_scratchpad(fn ->
+    TF.with_scratchpad!(fn ->
       build_quantified_term(var_types, body_fn, &sigma_term/1)
     end)
   end
@@ -120,7 +130,7 @@ defmodule ShotDs.Hol.Dsl do
     body_term_id = apply(body_fn, var_terms)
 
     List.foldr(decls, body_term_id, fn %Declaration{type: type} = decl, acc_term_id ->
-      abstracted_body = TF.make_abstr_term(acc_term_id, decl)
+      abstracted_body = TF.make_abstr_term!(acc_term_id, decl)
       quantifier_fn.(type) |> app(abstracted_body)
     end)
   end
@@ -130,11 +140,11 @@ defmodule ShotDs.Hol.Dsl do
   """
   @spec app(Term.term_id(), [Term.term_id()] | Term.term_id()) :: Term.term_id()
   def app(head_id, arg_ids) when is_integer(head_id) and is_list(arg_ids) do
-    TF.fold_apply(head_id, arg_ids)
+    TF.fold_apply!(head_id, arg_ids)
   end
 
   def app(head_id, arg_id) when is_integer(head_id) and is_integer(arg_id) do
-    TF.make_appl_term(head_id, arg_id)
+    TF.make_appl_term!(head_id, arg_id)
   end
 
   @doc """
@@ -151,7 +161,7 @@ defmodule ShotDs.Hol.Dsl do
   """
   @spec lambda([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
   def lambda(var_types, body_fn) when is_function(body_fn) do
-    TF.with_scratchpad(fn ->
+    TF.with_scratchpad!(fn ->
       decls =
         var_types
         |> List.wrap()
@@ -160,7 +170,7 @@ defmodule ShotDs.Hol.Dsl do
 
       var_terms = Enum.map(decls, &TF.make_term/1)
       body_term_id = apply(body_fn, var_terms)
-      List.foldr(decls, body_term_id, &TF.make_abstr_term(&2, &1))
+      List.foldr(decls, body_term_id, &TF.make_abstr_term!(&2, &1))
     end)
   end
 end

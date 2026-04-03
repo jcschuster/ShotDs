@@ -15,7 +15,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
       {Type.new(r3), Type.new(r2)}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     assert TI.apply_subst(Type.new(r3), subst) == Type.new(:i)
   end
@@ -28,7 +28,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
       {Type.new(r1, [r2]), Type.new(:o, [:i])}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     # After solving, r1 should resolve to o and r2 should resolve to i
     resolved_r1 = TI.apply_subst(Type.new(r1), subst)
@@ -54,7 +54,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
       {Type.new(ref), Type.new(:i)}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     assert TI.apply_subst(Type.new(ref), subst) == Type.new(:i)
   end
@@ -67,7 +67,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
       {Type.new(r), Type.new(:i)}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     # r should map to :i (the atom, not wrapped)
     assert Map.get(subst, r) == :i
@@ -88,7 +88,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
   test "solve/1 with identical left and right types" do
     type = Type.new(:o, :i)
 
-    subst = TI.solve([{type, type}])
+    {:ok, subst} = TI.solve([{type, type}])
 
     assert subst == %{}
   end
@@ -108,7 +108,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
     r2 = make_ref()
 
     # Two different variables can unify to different types no problem
-    subst =
+    {:ok, subst} =
       TI.solve([
         {Type.new(r1), Type.new(:i)},
         {Type.new(r2), Type.new(:o)}
@@ -136,7 +136,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
       {Type.new(:o, Type.new(r1, :i)), Type.new(:o, Type.new(:i, :i))}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     assert TI.apply_subst(Type.new(r1), subst) == Type.new(:i)
   end
@@ -169,7 +169,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
       {Type.new(r2), Type.new(:i)}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     assert TI.apply_subst(Type.new(r1), subst) == Type.new(:i)
     assert TI.apply_subst(Type.new(r2), subst) == Type.new(:i)
@@ -197,7 +197,7 @@ defmodule ShotDs.Util.TypeInferenceAdvancedTest do
       {Type.new(r4, [r5, r1]), Type.new(:i, [:o, :o])}
     ]
 
-    subst = TI.solve(constraints)
+    {:ok, subst} = TI.solve(constraints)
 
     assert TI.apply_subst(Type.new(r1), subst) == Type.new(:o)
     # r3 should resolve to :i (what r2 resolves to)
