@@ -100,7 +100,6 @@ defmodule ShotDs.Util.Lexer do
       string(")") |> replace({:rparen, ")"}),
       string("[") |> replace({:lbracket, "["}),
       string("]") |> replace({:rbracket, "]"}),
-      string("::") |> replace({:dcolon, "::"}),
       string(":") |> replace({:colon, ":"}),
       string(",") |> replace({:comma, ","}),
       string(".") |> replace({:dot, "."}),

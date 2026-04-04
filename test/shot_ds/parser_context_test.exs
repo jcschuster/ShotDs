@@ -2,7 +2,7 @@ defmodule ShotDs.ParserContextTest do
   use ShotDs.TermFactoryCase
 
   alias ShotDs.Parser
-  alias ShotDs.Data.{Context, Type}
+  alias ShotDs.Data.Type
   require Logger
 
   test "parse_context/1 with empty string returns empty context" do
@@ -13,14 +13,14 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context/1 parses single variable declaration" do
-    {:ok, ctx} = Parser.parse_context("X::$i")
+    {:ok, ctx} = Parser.parse_context("X:$i")
 
     assert ctx.vars |> Map.has_key?("X")
     assert ctx.vars["X"] == Type.new(:i)
   end
 
   test "parse_context/1 parses single constant declaration" do
-    {:ok, ctx} = Parser.parse_context("f::$o>$i")
+    {:ok, ctx} = Parser.parse_context("f:$o>$i")
 
     assert ctx.consts |> Map.has_key?("f")
     # $o>$i is parsed right-associatively as i <- o
@@ -34,7 +34,7 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context!/1 parses variable with type" do
-    ctx = Parser.parse_context!("X::$i")
+    ctx = Parser.parse_context!("X:$i")
 
     assert ctx.vars |> Map.has_key?("X")
     var_type = ctx.vars["X"]
@@ -42,7 +42,7 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context!/1 parses constant with function type" do
-    ctx = Parser.parse_context!("f::$o>$i")
+    ctx = Parser.parse_context!("f:$o>$i")
 
     assert ctx.consts |> Map.has_key?("f")
     const_type = ctx.consts["f"]
@@ -50,7 +50,7 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context/1 handles multiple variable declarations" do
-    {:ok, ctx} = Parser.parse_context("X::$i, Y::$o")
+    {:ok, ctx} = Parser.parse_context("X:$i, Y:$o")
 
     assert ctx.vars |> Map.has_key?("X")
     assert ctx.vars |> Map.has_key?("Y")
@@ -59,14 +59,14 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context/1 handles mixed variable and constant declarations" do
-    {:ok, ctx} = Parser.parse_context("X::$i, f::$o>$i")
+    {:ok, ctx} = Parser.parse_context("X:$i, f:$o>$i")
 
     assert ctx.vars |> Map.has_key?("X")
     assert ctx.consts |> Map.has_key?("f")
   end
 
   test "parse_context/1 parses multiple constants" do
-    {:ok, ctx} = Parser.parse_context("p::$o, q::$o, r::$o")
+    {:ok, ctx} = Parser.parse_context("p:$o, q:$o, r:$o")
 
     assert ctx.consts |> Map.has_key?("p")
     assert ctx.consts |> Map.has_key?("q")
@@ -74,7 +74,7 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context/1 parses constants with complex types" do
-    {:ok, ctx} = Parser.parse_context("f::$i>$i>$o, g::$o>$o>$o")
+    {:ok, ctx} = Parser.parse_context("f:$i>$i>$o, g:$o>$o>$o")
 
     f_type = ctx.consts["f"]
     # $i>$i>$o is parsed right-associatively as o <- i <- i
@@ -86,7 +86,7 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context/1 with parenthesized types" do
-    {:ok, ctx} = Parser.parse_context("f::($i>$o)>$o")
+    {:ok, ctx} = Parser.parse_context("f:($i>$o)>$o")
 
     f_type = ctx.consts["f"]
     # Type should be (i>o)>o
@@ -95,19 +95,19 @@ defmodule ShotDs.ParserContextTest do
 
   test "parse_context/1 with duplicate names uses last definition" do
     # The parser uses Context.put_var/put_const which overwrites
-    {:ok, ctx} = Parser.parse_context("X::$i, X::$o")
+    {:ok, ctx} = Parser.parse_context("X:$i, X:$o")
     assert ctx.vars["X"] == Type.new(:o)
   end
 
   test "parse_context!/1 raises on syntax errors" do
     assert_raise ShotDs.Parser.ParseError, fn ->
-      Parser.parse_context!("X:: ??")
+      Parser.parse_context!("X: ??")
     end
   end
 
   test "parse_context/1 handles whitespace" do
-    {:ok, ctx1} = Parser.parse_context("X :: $i")
-    {:ok, ctx2} = Parser.parse_context("X::$i")
+    {:ok, ctx1} = Parser.parse_context("X : $i")
+    {:ok, ctx2} = Parser.parse_context("X:$i")
 
     assert ctx1.vars == ctx2.vars
   end
@@ -168,12 +168,12 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context/1 with many declarations" do
-    {:ok, ctx} = Parser.parse_context("a::$o, b::$o, c::$i, d::$i>$o, e::$o>$i>$o")
+    {:ok, ctx} = Parser.parse_context("a:$o, b:$o, c:$i, d:$i>$o, e:$o>$i>$o")
 
     assert map_size(ctx.consts) == 5
-    # d::$i>$o is i <- o, so Type.new(:o, :i)
+    # d:$i>$o is i <- o, so Type.new(:o, :i)
     assert ctx.consts["d"] == Type.new(:o, :i)
-    # e::$o>$i>$o parses as o <- (i <- o)
+    # e:$o>$i>$o parses as o <- (i <- o)
     assert ctx.consts["e"].goal == :o
     assert length(ctx.consts["e"].args) == 2
   end
@@ -186,7 +186,7 @@ defmodule ShotDs.ParserContextTest do
   end
 
   test "parse_context/1 deeply nested parenthesized types" do
-    {:ok, ctx} = Parser.parse_context("f::(($i>$o)>$o)>$o")
+    {:ok, ctx} = Parser.parse_context("f:(($i>$o)>$o)>$o")
 
     f_type = ctx.consts["f"]
     assert f_type.goal == :o

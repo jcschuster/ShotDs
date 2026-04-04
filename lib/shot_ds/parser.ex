@@ -33,6 +33,11 @@ defmodule ShotDs.Parser do
   While this will be parsed as `"(![X : $o]: (f @ X)) | (g @ X)"`:
 
       iex> parse "![X : $o]: (f @ X) | (g @ X)"
+
+  > #### Note {: .info}
+  >
+  > There are also custom sigils available for most parsing functions. These are
+  > defined in the module `ShotDs.Hol.Sigils`.
   """
 
   alias ShotDs.Data.{Type, Declaration, Term, Context}
@@ -41,7 +46,13 @@ defmodule ShotDs.Parser do
   alias ShotDs.Util.Lexer
   alias ShotDs.Util.TypeInference, as: TI
 
-  @dialyzer {:no_opaque, parse: 1, parse!: 1, parse_tokens: 1, parse_tokens!: 1, parse_context: 1}
+  @dialyzer {:no_opaque,
+             parse: 1,
+             parse!: 1,
+             parse_tokens: 1,
+             parse_tokens!: 1,
+             parse_context: 1,
+             parse_context_tokens: 2}
   @dialyzer {:nowarn_function, parse!: 1}
 
   defmodule ParseError do
@@ -268,7 +279,7 @@ defmodule ShotDs.Parser do
 
   ## Example
 
-      iex> parse_context!("X::$i, c::$o>$o")
+      iex> parse_context!("X : $i, c: $o>$o")
   """
   @spec parse_context!(String.t()) :: Context.t()
   def parse_context!(context_str) do
@@ -282,7 +293,7 @@ defmodule ShotDs.Parser do
           {:ok, Context.t()} | {:error, String.t()}
   defp parse_context_tokens(tokens, ctx)
 
-  defp parse_context_tokens([{:var, name}, {:dcolon, "::"} | rest], ctx) do
+  defp parse_context_tokens([{:var, name}, {:colon, ":"} | rest], ctx) do
     with {:ok, {type, rest2}} <- parse_type_tokens(rest) do
       ctx2 = Context.put_var(ctx, name, type)
 
@@ -294,7 +305,7 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_context_tokens([{:atom, name}, {:dcolon, "::"} | rest], ctx) do
+  defp parse_context_tokens([{:atom, name}, {:colon, ":"} | rest], ctx) do
     with {:ok, {type, rest2}} <- parse_type_tokens(rest) do
       ctx2 = Context.put_const(ctx, name, type)
 

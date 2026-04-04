@@ -1,6 +1,7 @@
 defmodule ShotDs.Data.Context do
   @moduledoc """
-  Represents a type environment for parsing and type checking.
+  Represents a type environment for parsing and type checking. Can also be
+  created by using the `~e` sigil from `ShotDs.Hol.Sigils`.
 
   ## Examples
 
@@ -55,6 +56,7 @@ defmodule ShotDs.Data.Context do
   Associates the constant with the given name with the given type in the
   context. Overwrites the old value if present.
   """
+  @spec put_const(t(), String.t(), Type.t()) :: t()
   def put_const(%__MODULE__{} = ctx, name, %Type{} = type)
       when is_binary(name) or is_reference(name) do
     %{ctx | consts: Map.put(ctx.consts, name, type)}

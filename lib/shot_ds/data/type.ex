@@ -2,8 +2,6 @@ defmodule ShotDs.Data.Type do
   @moduledoc """
   Provides a data structure for Church's simple types.
 
-  The protocol `String.Chars` is implemented.
-
   ## Examples
 
       iex> o = Type.new(:o)

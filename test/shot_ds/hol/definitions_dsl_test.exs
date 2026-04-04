@@ -118,7 +118,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
   end
 
   test "Definitions.extensional_equality/1 raises for non-function types" do
-    assert_raise RuntimeError, ~r/must be a function type/, fn ->
+    assert_raise ArgumentError, ~r/must be a function type/, fn ->
       Definitions.extensional_equality(Type.new(:i))
     end
   end

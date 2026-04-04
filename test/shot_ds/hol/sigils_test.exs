@@ -1,7 +1,7 @@
 defmodule ShotDs.Hol.SigilsTest do
   use ShotDs.TermFactoryCase
 
-  alias ShotDs.Data.{Context, Term}
+  alias ShotDs.Data.Context
   alias ShotDs.Hol.Sigils
   alias ShotDs.Parser
   alias ShotDs.Tptp
@@ -88,7 +88,7 @@ defmodule ShotDs.Hol.SigilsTest do
   end
 
   test "sigil_e/2 parses valid context declarations" do
-    context_str = "X::$i"
+    context_str = "X:$i"
 
     result = Sigils.sigil_e(context_str, [])
 
@@ -96,7 +96,7 @@ defmodule ShotDs.Hol.SigilsTest do
   end
 
   test "sigil_e/2 returns context matching Parser.parse_context!" do
-    context_str = "X::$i"
+    context_str = "X:$i"
 
     sigil_result = Sigils.sigil_e(context_str, [])
     parser_result = Parser.parse_context!(context_str)

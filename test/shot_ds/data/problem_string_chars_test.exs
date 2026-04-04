@@ -52,7 +52,7 @@ end
 defmodule ShotDs.Data.ProblemStringCharsTest do
   use ExUnit.Case
 
-  alias ShotDs.Data.{Problem, Type, Declaration, Term}
+  alias ShotDs.Data.{Problem, Type, Declaration}
 
   test "to_string on empty problem shows unnamed" do
     problem = %Problem{}

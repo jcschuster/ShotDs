@@ -1,7 +1,7 @@
 defmodule ShotDs.Util.FormatterTest do
   use ShotDs.TermFactoryCase
 
-  alias ShotDs.Data.{Type, Declaration, Term, Problem}
+  alias ShotDs.Data.{Type, Declaration, Problem}
   alias ShotDs.Util.Formatter
   alias ShotDs.Stt.Numerals
 
@@ -68,7 +68,7 @@ defmodule ShotDs.Util.FormatterTest do
   end
 
   test "format_term/2 with invalid ID returns error" do
-    result = Formatter.format_term(99999)
+    result = Formatter.format_term(99_999)
     assert {:error, _reason} = result
   end
 

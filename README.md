@@ -81,7 +81,7 @@ unused Elixir operators `&&&`, `|||`, `~>` and `<~>` as shorthand constructors.
 The following example illustrates this API:
 
 ```elixir
-import ShotDs.Hol.Dsl         # contains lambea/2, neg/1, |||/2 and &&&/2
+import ShotDs.Hol.Dsl         # contains lambda/2, neg/1, |||/2 and &&&/2
 import ShotDs.Hol.Definitions # contains type_o/0
 
 def exclusive_or do
@@ -107,6 +107,9 @@ or including files from the [TPTP problem library](https://tptp.org/TPTP/)
 requires an environment variable `TPTP_ROOT` which points to the root directory
 of the TPTP problem library (may require a reboot for Elixir to recognize).
 
+Parsing is also available via custom sigils, e.g. ~f'' for parsing TH0 formula
+strings.
+
 ## Installation
 
 This package can be installed by adding `shot_ds` to your list of dependencies
@@ -115,7 +118,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 0.5.0"}
+    {:shot_ds, "~> 1.0.0"}
   ]
 end
 ```

@@ -1,4 +1,12 @@
 defmodule ShotDs.Hol.Dsl do
+  @moduledoc groups: [
+               :Primitive,
+               :Unary,
+               :"Binary (infix)",
+               :"Binary (prefix)",
+               :Application,
+               :Binders
+             ]
   @moduledoc """
   Introduces a domain specific language (DSL) for constructing HOL terms.
 
@@ -35,36 +43,44 @@ defmodule ShotDs.Hol.Dsl do
   alias ShotDs.Data.{Type, Declaration, Term}
   alias ShotDs.Stt.TermFactory, as: TF
 
+  @doc group: :Primitive
   @doc """
   Primitive term representing a constant symbol of the given type.
   """
   def const(name, type), do: TF.make_const_term(name, type)
 
+  @doc group: :Primitive
   @doc """
   Primitive term representing a variable symbol of the given type.
   """
   def var(name, type), do: TF.make_free_var_term(name, type)
 
+  @doc group: :Unary
   @doc "Logical Negation"
   @spec neg(Term.term_id()) :: Term.term_id()
   def neg(a), do: app(neg_term(), a)
 
-  @doc "Logical Disjunction (OR)"
+  @doc group: :"Binary (infix)"
+  @doc "Logical Disjunction"
   @spec Term.term_id() ||| Term.term_id() :: Term.term_id()
   def a ||| b, do: app(or_term(), [a, b])
 
-  @doc "Logical Conjunction (AND)"
+  @doc group: :"Binary (infix)"
+  @doc "Logical Conjunction"
   @spec Term.term_id() &&& Term.term_id() :: Term.term_id()
   def a &&& b, do: app(and_term(), [a, b])
 
+  @doc group: :"Binary (infix)"
   @doc "Logical Implication"
   @spec Term.term_id() ~> Term.term_id() :: Term.term_id()
   def a ~> b, do: app(implies_term(), [a, b])
 
+  @doc group: :"Binary (infix)"
   @doc "Logical Equivalence"
   @spec Term.term_id() <~> Term.term_id() :: Term.term_id()
   def a <~> b, do: app(equivalent_term(), [a, b])
 
+  @doc group: :"Binary (prefix)"
   @doc """
   Logical Equality.
 
@@ -77,6 +93,7 @@ defmodule ShotDs.Hol.Dsl do
     app(equals_term(term_a.type), [a, b])
   end
 
+  @doc group: :"Binary (prefix)"
   @doc """
   Logical Inequality.
 
@@ -86,6 +103,7 @@ defmodule ShotDs.Hol.Dsl do
   @spec neq(Term.term_id(), Term.term_id()) :: Term.term_id()
   def neq(a, b), do: neg(eq(a, b))
 
+  @doc group: :Binders
   @doc """
   Universal quantification. Supports single or multiple variables.
 
@@ -105,8 +123,13 @@ defmodule ShotDs.Hol.Dsl do
   def forall(%Type{} = t, body_fn) when is_function(body_fn),
     do: forall([t], body_fn)
 
+  @doc group: :Binders
   @doc """
   Existential quantification. Supports single or multiple variables.
+
+  Temporary fresh free variables will be generated corresponding to the types.
+  Passes the generated variable term IDs to the provided `body_fn`. The arity of
+  `body_fn` must correspond to the number of given variables.
 
   ## Examples
 
@@ -135,8 +158,13 @@ defmodule ShotDs.Hol.Dsl do
     end)
   end
 
+  @doc group: :Application
   @doc """
   Applies a term to a single argument term or list of argument terms.
+
+  Temporary fresh free variables will be generated corresponding to the types.
+  Passes the generated variable term IDs to the provided `body_fn`. The arity of
+  `body_fn` must correspond to the number of given variables.
   """
   @spec app(Term.term_id(), [Term.term_id()] | Term.term_id()) :: Term.term_id()
   def app(head_id, arg_ids) when is_integer(head_id) and is_list(arg_ids) do
@@ -147,11 +175,13 @@ defmodule ShotDs.Hol.Dsl do
     TF.make_appl_term!(head_id, arg_id)
   end
 
+  @doc group: :Binders
   @doc """
-  Constructs a lambda abstraction over a list of variable types. Temporary
-  fresh free variables will be generated corresponding to the types. Passes the
-  generated variable term IDs to the provided `body_fn`. The arity of `body_fn`
-  must correspond to the number of given variables.
+  Constructs a lambda abstraction over a list of variable types.
+
+  Temporary fresh free variables will be generated corresponding to the types.
+  Passes the generated variable term IDs to the provided `body_fn`. The arity of
+  `body_fn` must correspond to the number of given variables.
 
   ## Examples:
 

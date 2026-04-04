@@ -13,6 +13,9 @@ defmodule ShotDs.Util.TypeInference do
   @typep general_type() :: Type.t() | reference() | atom()
 
   defmodule TypeError do
+    @moduledoc """
+    An exception raised when type inference fails.
+    """
     defexception message: "type error"
   end
 

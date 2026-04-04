@@ -2,8 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:shot_ds, path: Path.join(__DIR__, "..")}
-  # {:shot_ds, "~> 1.0"}
+  {:shot_ds, "~> 1.0"}
 ])
 ```
 
@@ -44,7 +43,7 @@ import ShotDs.Util.Formatter # pretty-printing
 
 x_id = TF.make_free_var_term("X", Type.new(:i, [:i, :o])) |> IO.inspect(label: "assigned ID")
 TF.get_term!(x_id) |> IO.inspect(label: "generated term")
-format(x_id, _hide_types=false) |> IO.inspect(label: "pretty-printed")
+format!(x_id, _hide_types=false) |> IO.inspect(label: "pretty-printed")
 :ok
 ```
 
@@ -60,7 +59,7 @@ exclusive_or = lambda([type_o(), type_o()], fn p, q ->
   (p ||| q) &&& neg(p &&& q)
 end)
 
-format(exclusive_or) |> IO.puts()
+format!(exclusive_or) |> IO.puts()
 ```
 
 ## Parsing TH0 Strings
@@ -71,14 +70,14 @@ The module `ShotDs.Parser` offers powerful parsing capabilities with full type i
 alias ShotDs.Parser
 
 Parser.parse!("?[X : $o]: X => $true")
-|> format() |> IO.puts()
+|> format!() |> IO.puts()
 ```
 
 Note that the type inference engine assumes type $o$ for the outermost type unless inferable otherwise. Other unknown types are treated as _type variables_ and are assigned a unique ID:
 
 ```elixir
 Parser.parse!("X @ a")
-|> format(_hide_types = false) |> IO.puts()
+|> format!(_hide_types = false) |> IO.puts()
 ```
 
 To clear up ambiguities, we can pass in a _type environment_:
@@ -89,45 +88,100 @@ alias ShotDs.Data.Context
 ctx = Context.new() |> Context.put_const("a", type_i())
 
 Parser.parse!("X @ a", ctx)
-|> format() |> IO.puts()
+|> format!() |> IO.puts()
+```
+
+Parsing is also available via [Sigils](https://hexdocs.pm/elixir/sigils.html) for TH0 formula strings (`~f`), TPTP problems (`~p`) (wiht `thf(...)` tags) and type environments (`~e`), including a wrapper for providing context:
+
+```elixir
+import ShotDs.Hol.Sigils
+
+~f(?[X : $o]: X => $true) |> format!() |> IO.puts()
+
+with_context(~e[X : $o, p : $o>$i], fn ->
+  ~f(p @ X) |> format!(false) |> IO.puts()
+end)
 ```
 
 ## Advanced Utilities
 
-__Error Handling__: Functions that can fail return a tuple `{:ok, result}` or `{:error, reason}` per default. There are "bang" versions (suffixed by `!`) of all functions that either return the result or raise an error.
+__Error Handling__: Functions that can fail return a tuple `{:ok, result}` or `{:error, reason}` per default. There are "bang" versions (suffixed by `!`) of all functions that either return the result directly or raise an error. [`with`-clauses](https://hexdocs.pm/elixir/Kernel.SpecialForms.html#with/1) offer idiomatic error handling when processing user input and are generally preferred over exceptions:
 
-<!-- livebook:{"break_markdown":true} -->
+```elixir
+with {:ok, term_id} <- Parser.parse("a & b"),
+     {:ok, formatted} <- format(term_id) do
+  IO.puts(formatted)
+else
+  {:error, msg} -> IO.puts("ERROR: #{msg}")
+end
+
+with {:ok, term_id} <- Parser.parse("a &"),
+     {:ok, formatted} <- format(term_id) do
+  IO.puts(formatted)
+else
+  {:error, msg} -> IO.puts("ERROR: #{msg}")
+end
+
+try do
+  Parser.parse!("a &")
+rescue
+  e in Parser.ParseError ->
+    IO.puts(~s'Rescued Parser.ParseError with message: "#{e.message}"')
+end
+```
 
 __File Parsing__: `ShotDs.Tptp` includes parsing capabilities for TPTP files. The collected information is aggregated in a `ShotDs.Data.Problem` struct.
 
 ```elixir
-%ShotDs.Data.Problem{}
+problem = ~p"""
+thf(e_type,type,
+    e: $tType).
+
+thf(p_type,type,
+    p: e>$o).
+
+thf(lma,lemma,
+    ![X : e]: p @ X).
+
+thf(conj,conjecture,
+    ?[Y : e]: p @ Y).
+"""
+
+IO.inspect(problem)
+
+format!(problem) |> IO.puts()
 ```
 
 __Term Manipulation__: Various functions regarding the semantics of STT, e.g. substitutions, are handled by the `ShotDs.Stt.Semantics` module.
 
 ```elixir
-alias ShotDs.Data.{Declaration, Substitution}
+alias ShotDs.Data.Substitution
 alias ShotDs.Stt.Semantics
 
-x = Declaration.new_free_var("X", type_ii())
-a = TF.make_const_term("a", type_i())
-b = TF.make_const_term("b", type_ii())
+x = var("X", type_ii())
+a = const("a", type_i())
+b = const("b", type_ii())
 
-x_a = app(TF.make_term(x), a)
-x_a |> format(true) |> IO.puts()
+x_a = app(x, a)
+x_a |> format!(true) |> IO.puts()
 
-s = %Substitution{fvar: x, term_id: b}
+s = %Substitution{fvar: TF.get_term!(x).head, term_id: b}
 
-Semantics.subst!(s, x_a) |> format(true) |> IO.puts()
+Semantics.subst!(s, x_a) |> format!(true) |> IO.puts()
 ```
 
-__Church Numerals__: `ShotDs.Stt.Numerals` provides an implementation of Church's encoding of natural numbers, adapted to simple types. This can for example be used for benchmarking.
+__Church Encoding__: `ShotDs.Stt.Numerals` provides an implementation of Church's encoding of natural numbers, adapted to simple types. This can for example be used for benchmarking. Additionally, Church's encoding of Booleans is implemented in the module `ShotDs.Stt.Booleans`.
 
 ```elixir
 import ShotDs.Stt.Numerals
 
-plus(num(5), num(2)) |> format(true) |> IO.puts()
+plus(num(5), num(2)) |> format!() |> IO.puts()
+```
+
+```elixir
+import ShotDs.Stt.Booleans
+
+b_and(tt(), b_var("P")) |> format!() |> IO.puts()
 ```
 
 __Traversals and Transformation__: Transformations of terms mostly follow the same scheme. An optimized adaption of the combinators `fold` (`fold_term/2`, `fold_term!/2`) and `map` (`map_term/5`, `map_term!/5`) to the DAG representation of terms is implemented in the module `ShotDs.Util.TermTraversal`. Examples for the usage of these higher-order functions can be found in the source code of the `ShotDs.Stt.Semantics` module or in `ShotDs.Util.Formatter.format_term/2`.
@@ -140,7 +194,7 @@ __Pattern Matching__: `ShotDs.Hol.Patterns` provides macro definitions for patte
 use ShotDs.Hol.Patterns
 
 case TF.get_term!(true_term() ||| false_term()) do
-  disjunction(p, q) -> IO.puts("Disjunction of #{format(p)} and #{format(q)}")
+  disjunction(p, q) -> IO.puts("Disjunction of #{format!(p)} and #{format!(q)}")
   _ -> IO.puts("No match")
 end
 ```

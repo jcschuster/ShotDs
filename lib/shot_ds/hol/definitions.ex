@@ -1,14 +1,17 @@
 defmodule ShotDs.Hol.Definitions do
-  @moduledoc """
+  @moduledoc groups: [:"Simple Types", :Constants, :Terms, :Equality]
+  @moduledoc ~S"""
   Provides definitions for common HOL types, terms and constants.
 
   This module implements the following propositional constants:
 
-  `⊤::o, ⊥::o, ¬::o->o, ∨::o->o->o, ∧::o->o->o, ⊃::o->o->o, ≡::o->o->o`
+  $$\top_o \quad \bot_o \quad \neg_{o\to o} \quad \lor_{o\to o\to o} \quad
+  \land_{o\to o\to o} \quad \supset_{o\to o\to o} \quad \equiv_{o\to o\to o}$$
 
-  Additionally, the following polymorphic higher-order constants:
+  Additionally, the following parameterized higher-order constants:
 
-  `=::t->t->o, Π::(t->o)->o, Σ::(t->o)->o`
+  $$=_{\tau\to\tau\to o} \quad \Pi_{(\tau\to o)\to o} \quad
+  \Sigma_{(\tau\to o)\to o}$$
   """
 
   alias ShotDs.Data.{Type, Declaration, Term}
@@ -18,91 +21,110 @@ defmodule ShotDs.Hol.Definitions do
   # TYPES
   ##############################################################################
 
-  @doc group: :Types
+  @doc group: :"Simple Types"
   @doc """
-  Base type for booleans (type o). Represents true or false.
+  Base type for booleans (type $o$). Represents true or false.
   """
   @spec type_o() :: Type.t()
   def type_o, do: Type.new(:o)
 
-  @doc group: :Types
-  @doc """
-  Base type for individuals (type i).
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Base type for individuals (type $\iota$).
   """
   @spec type_i() :: Type.t()
   def type_i, do: Type.new(:i)
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type o->o, e.g. unary connectives like negateion.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $o\to o$, e.g. unary connectives like negation.
   """
   @spec type_oo() :: Type.t()
   def type_oo, do: Type.new(:o, :o)
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type o->o->o, e.g. binary connectives like conjunction.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $o\to o\to o$, e.g. binary connectives like
+  conjunction.
   """
   @spec type_ooo() :: Type.t()
   def type_ooo, do: Type.new(:o, [:o, :o])
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type i->i, i.e., endomorphisms/operators on type i.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $\iota\to\iota$, i.e., endomorphisms/operators on
+  type $\iota$.
   """
   @spec type_ii() :: Type.t()
   def type_ii, do: Type.new(:i, :i)
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type i->i->i, i.e., binary operators on type i.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $\iota\to\iota\to\iota$, i.e., binary operators on
+  type $\iota$ or Church's encoding of booleans.
   """
   @spec type_iii() :: Type.t()
   def type_iii, do: Type.new(:i, [:i, :i])
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type i->o, e.g. sets of individuals or predicates over
-  individuals.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $(\iota\to\iota)\to\iota\to\iota$, i.e., iterators
+  like Church numerals.
+  """
+  @spec type_ii_ii() :: Type.t()
+  def type_ii_ii, do: Type.new(:i, [type_ii(), :i])
+
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $\iota\to o$, e.g. sets of individuals or predicates
+  over individuals.
   """
   @spec type_io() :: Type.t()
   def type_io, do: Type.new(:o, :i)
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type i->i->o, e.g. relations on individuals.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $\iota\to\iota\to o$, e.g. relations on individuals.
   """
   @spec type_iio() :: Type.t()
   def type_iio, do: Type.new(:o, [:i, :i])
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type (i->o)->o, e.g. sets of sets of individuals, or
-  predicates over sets of individuals.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $(\iota\to o)\to o$, e.g. sets of sets of
+  individuals, or predicates over sets of individuals.
   """
   @spec type_io_o() :: Type.t()
   def type_io_o, do: Type.new(:o, Type.new(:o, :i))
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type (i->o)->i, e.g. the choice operator (Hilbert's
-  epsilon).
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $(\iota\to o)\to\iota$, e.g. the choice operator
+  (Hilbert's $\epsilon$).
   """
   @spec type_io_i() :: Type.t()
   def type_io_i, do: Type.new(:i, Type.new(:o, :i))
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type (i->o)->(i->o)->o, i.e. relations between sets of
-  individuals, e.g. the subset relation.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $(\iota\to o)\to\iota\to o$, e.g. predicate modifiers
+  over type $\iota$.
+  """
+  @spec type_io_io() :: Type.t()
+  def type_io_io, do: Type.new(:i, [Type.new(:o, :i), :i])
+
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $(\iota\to o)\to(\iota\to o)\to o$, i.e. relations
+  between sets of individuals, e.g. the subset relation.
   """
   @spec type_io_io_o() :: Type.t()
   def type_io_io_o, do: Type.new(:o, [Type.new(:o, :i), Type.new(:o, :i)])
 
-  @doc group: :Types
-  @doc """
-  Type for symbols of type (i->o)->(i->o)->i->o, e.g. set operations like union
-  or intersection.
+  @doc group: :"Simple Types"
+  @doc ~S"""
+  Type for symbols of type $(\iota\to o)\to(\iota\to o)\to\iota\to o$, e.g. set
+  or predicate operations like intersection.
   """
   @spec type_io_io_io() :: Type.t()
   def type_io_io_io, do: Type.new(:o, [Type.new(:o, :i), Type.new(:o, :i), :i])
@@ -112,75 +134,76 @@ defmodule ShotDs.Hol.Definitions do
   ##############################################################################
 
   @doc group: :Constants
-  @doc """
-  Constant representing truth.
+  @doc ~S"""
+  Constant representing truth $\top_o$.
   """
   @spec true_const() :: Declaration.const_t()
   def true_const, do: Declaration.new_const("⊤", type_o())
 
   @doc group: :Constants
-  @doc """
-  Constant representing falsity.
+  @doc ~S"""
+  Constant representing falsity $\bot_o$.
   """
   @spec false_const() :: Declaration.const_t()
   def false_const, do: Declaration.new_const("⊥", type_o())
 
   @doc group: :Constants
-  @doc """
-  Constant representing the negation operator.
+  @doc ~S"""
+  Constant representing the negation operator $\neg_{o\to o}$.
   """
   @spec neg_const() :: Declaration.const_t()
   def neg_const, do: Declaration.new_const("¬", type_oo())
 
   @doc group: :Constants
-  @doc """
-  Constant representing the disjunction operator.
+  @doc ~S"""
+  Constant representing the disjunction operator $\land_{o\to o\to o}$.
   """
   @spec or_const() :: Declaration.const_t()
   def or_const, do: Declaration.new_const("∨", type_ooo())
 
   @doc group: :Constants
-  @doc """
-  Constant representing the conjunction operator.
+  @doc ~S"""
+  Constant representing the conjunction operator $\lor_{o\to o\to o}$.
   """
   @spec and_const() :: Declaration.const_t()
   def and_const, do: Declaration.new_const("∧", type_ooo())
 
   @doc group: :Constants
-  @doc """
-  Constant representing the implication operator.
+  @doc ~S"""
+  Constant representing the implication operator $\supset_{o\to o\to o}$.
   """
   @spec implies_const() :: Declaration.const_t()
   def implies_const, do: Declaration.new_const("⊃", type_ooo())
 
   @doc group: :Constants
-  @doc """
-  Constant representing the equivalence operator.
+  @doc ~S"""
+  Constant representing the equivalence operator $\equiv_{o\to o\to o}$.
   """
   @spec equivalent_const() :: Declaration.const_t()
   def equivalent_const, do: Declaration.new_const("≡", type_ooo())
 
   @doc group: :Constants
-  @doc """
-  Constant representing equality over instances of the given type.
+  @doc ~S"""
+  Constant representing equality $=_{\tau\to\tau\to o}$ over instances of the
+  given simple type $\tau$.
   """
   @spec equals_const(Type.t()) :: Declaration.const_t()
   def equals_const(%Type{} = t),
     do: Declaration.new_const("=", Type.new(:o, [t, t]))
 
   @doc group: :Constants
-  @doc """
-  Constant representing the pi operator (universal quantification) over the
-  given element type.
+  @doc ~S"""
+  Constant representing the $\Pi_{(\tau\to o)\to o}$ operator (universal
+  quantification) over the given element type $\tau$.
   """
   @spec pi_const(Type.t()) :: Declaration.const_t()
   def pi_const(%Type{} = t),
     do: Declaration.new_const("Π", Type.new(:o, Type.new(:o, t)))
 
   @doc group: :Constants
-  @doc """
-  Constant representing the sigma operator (existential quantification) over
-  the given element type.
+  @doc ~S"""
+  Constant representing the $\Sigma_{(\tau\to o)\to o}$ operator (existential
+  quantification) over the given element type $\tau$.
   """
   @spec sigma_const(Type.t()) :: Declaration.const_t()
   def sigma_const(%Type{} = t),
@@ -191,37 +214,38 @@ defmodule ShotDs.Hol.Definitions do
   ##############################################################################
 
   @doc group: :Terms
-  @doc """
-  Term representing truth.
+  @doc ~S"""
+  Term representing truth $\top_o$.
   """
   @spec true_term() :: Term.term_id()
   def true_term, do: TF.make_const_term("⊤", type_o())
 
   @doc group: :Terms
-  @doc """
-  Term representing falsity.
+  @doc ~S"""
+  Term representing falsity $\bot_o$.
   """
   @spec false_term() :: Term.term_id()
   def false_term, do: TF.make_const_term("⊥", type_o())
 
   @doc group: :Terms
-  @doc """
-  Term representing the negation operator.
+  @doc ~S"""
+  Term representing the negation operator $\neg_{o\to o}$.
   """
   @spec neg_term() :: Term.term_id()
   def neg_term, do: TF.make_const_term("¬", type_oo())
 
   @doc group: :Terms
-  @doc """
-  Term representing the disjunction operator.
+  @doc ~S"""
+  Term representing the disjunction operator $\lor_{o\to o\to o}$.
   """
   @spec or_term() :: Term.term_id()
   def or_term, do: TF.make_const_term("∨", type_ooo())
 
   @doc group: :Terms
-  @doc """
+  @doc ~S"""
   Term representing the negated disjunction operator. As it is not part of the
-  signature, it is defined as negated disjunction.
+  signature, it is defined as negated disjunction
+  $\lambda P Q. \neg (P \lor Q)$.
   """
   def nor_term do
     x = Declaration.new_free_var("X", type_o())
@@ -232,16 +256,17 @@ defmodule ShotDs.Hol.Definitions do
   end
 
   @doc group: :Terms
-  @doc """
-  Term representing the conjunction operator.
+  @doc ~S"""
+  Term representing the conjunction operator $\land_{o\to o\to o}$.
   """
   @spec and_term() :: Term.term_id()
   def and_term, do: TF.make_const_term("∧", type_ooo())
 
   @doc group: :Terms
-  @doc """
+  @doc ~S"""
   Term representing the negated conjunction operator. As it is not part of the
-  signature, it is represented as negated conjunction.
+  signature, it is represented as negated conjunction
+  $\lambda P Q. \neg (P \land Q)$.
   """
   def nand_term do
     x = Declaration.new_free_var("X", type_o())
@@ -256,16 +281,17 @@ defmodule ShotDs.Hol.Definitions do
   end
 
   @doc group: :Terms
-  @doc """
-  Term representing the implication operator.
+  @doc ~S"""
+  Term representing the implication operator $\supset_{o\to o\to o}$.
   """
   @spec implies_term() :: Term.term_id()
   def implies_term, do: TF.make_const_term("⊃", type_ooo())
 
   @doc group: :Terms
-  @doc """
-  Term representing the converse of the implication operator. As it is not part
-  of the signature, it is represented as implication with flipped arguments.
+  @doc ~S"""
+  Term representing the converse of the implication operator
+  $\subset_{o\to o\to o}$. As it is not part of the signature, it is represented
+  as implication with flipped arguments $\lambda P Q. Q \supset P$.
   """
   def implied_by_term do
     x = Declaration.new_free_var("X", type_o())
@@ -279,16 +305,17 @@ defmodule ShotDs.Hol.Definitions do
   end
 
   @doc group: :Terms
-  @doc """
-  Term representing the equivalence operator.
+  @doc ~S"""
+  Term representing the equivalence operator $\equiv_{o\to o\to o}$.
   """
   @spec equivalent_term() :: Term.term_id()
   def equivalent_term, do: TF.make_const_term("≡", type_ooo())
 
   @doc group: :Terms
-  @doc """
+  @doc ~S"""
   Term representing the exclusive disjunction operator. As it is no part of the
-  signature, it is represented as negated equivalence.
+  signature, it is represented as negated equivalence
+  $\lambda P Q.\neg(P \equiv Q)$.
   """
   def xor_term do
     x = Declaration.new_free_var("X", type_o())
@@ -303,17 +330,19 @@ defmodule ShotDs.Hol.Definitions do
   end
 
   @doc group: :Terms
-  @doc """
-  Term representing equality over instances of the given type.
+  @doc ~S"""
+  Term representing the equality operator $=^\tau$ over instances of the given
+  type $\tau$.
   """
   @spec equals_term(Type.t()) :: Term.term_id()
   def equals_term(%Type{} = t),
     do: TF.make_const_term("=", Type.new(:o, [t, t]))
 
   @doc group: :Terms
-  @doc """
-  Term representing unequality over instances of the given type. As it is not
-  part of the signature, it is represented as negated equality.
+  @doc ~S"""
+  Term representing unequality over instances of the given type $\tau$. As it is
+  not part of the signature, it is represented as negated equality
+  $\lambda X_\tau Y_\tau. \neg (X =^\tau Y)$.
   """
   @spec not_equals_term(Type.t()) :: Term.term_id()
   def not_equals_term(%Type{} = t) do
@@ -329,35 +358,32 @@ defmodule ShotDs.Hol.Definitions do
   end
 
   @doc group: :Terms
-  @doc """
-  Term representing the pi operator (universal quantification) over the
-  given element type.
+  @doc ~S"""
+  Term representing the $\Pi_{(\tau\to o)\to o}$ operator (universal
+  quantification) over the given element type $\tau$.
   """
   @spec pi_term(Type.t()) :: Term.term_id()
   def pi_term(%Type{} = t),
     do: TF.make_const_term("Π", Type.new(:o, Type.new(:o, t)))
 
   @doc group: :Terms
-  @doc """
-  Term representing the sigma operator (existential quantification) over
-  the given element type.
+  @doc ~S"""
+  Term representing the $\Sigma_{(\tau\to o)\to o}$ operator (existential
+  quantification) over the given element type $\tau$.
   """
   @spec sigma_term(Type.t()) :: Term.term_id()
   def sigma_term(%Type{} = t),
     do: TF.make_const_term("Σ", Type.new(:o, Type.new(:o, t)))
 
-  @doc """
+  @doc group: :Equality
+  @doc ~S"""
   Constructor for Leibniz equality on the given type, which defines equality by
   stating that both arguments share the same properties. Generates an
   abstraction which can be applied to two arguments.
 
-  # Examples
+  $$\mathcal{L}^\tau := \lambda X_\tau Y_\tau.\text{ }\Pi(\lambda P_{\tau\to o}.\text{ }P\text{ }X \odot P\text{ }Y)$$
 
-      iex> leibniz_equality(type_i(), equivalent_term()) == parse("^[X:$i, Y:$i]: ![P:$i>$o]: P @ X <=> P @ Y")
-      true
-
-      iex> leibniz_equality(type_i(), implied_by_term()) == parse("^[X:$i, Y:$i]: ![P:$i>$o]: P @ X <= P @ Y")
-      true
+  where $\odot \in \{\supset, \subset, \equiv\}$
   """
   @spec leibniz_equality(Type.t(), :equiv | :imp | :conv_imp) :: Term.term_id()
   def leibniz_equality(type, connective \\ :equiv)
@@ -391,15 +417,14 @@ defmodule ShotDs.Hol.Definitions do
     |> TF.make_abstr_term!(x)
   end
 
-  @doc """
+  @doc group: :Equality
+  @doc ~S"""
   Constructor for Andrews equality on the given type, which defines equality by
   stating that both arguments share all reflexive relations. Generates an
   abstraction which can be applied to two arguments.
 
-  # Example
-
-      iex> andrews_equality(type_i()) == parse("^[X:$i, Y:$i]: ![Q:$i>$i>$o]: ((![Z:$i]: Q @ Z @ Z) => Q @ X @ Y)")
-      true
+  $$\mathcal{A}^\tau := \lambda X_\tau Y_\tau.\text{ }\Pi(\lambda Q_{\tau\to\tau\to o}.\text{ }
+  (\Pi(\lambda Z_\tau.\text{ }Q\text{ }Z\text{ }Z)) \supset Q\text{ }X\text{ }Y)$$
   """
   @spec andrews_equality(Type.t()) :: Term.term_id()
   def andrews_equality(%Type{} = type) do
@@ -433,15 +458,15 @@ defmodule ShotDs.Hol.Definitions do
     |> TF.make_abstr_term!(x)
   end
 
-  @doc """
+  @doc group: :Equality
+  @doc ~S"""
   Constructor for extensional equality on the given function type, which
   defines equality by equality of the extensions. Generates an abstraction
   which can be applied to two arguments.
 
-  # Example
+  $$\mathcal{E}^{\alpha\to\beta} := \lambda X_{\alpha\to\beta} Y_{\alpha\to\beta}.\text{ }\Pi(\lambda Z_\alpha. X\text{ }Z \doteq^\beta Y\text{ }Z)$$
 
-      iex> extensional_equality(type_ii()) == parse("^[X:$i>i, Y:$i>i]: ![Z:$i]: X @ Z = Y @ Z")
-      true
+  for some interpretation of the inner equality relation $\doteq^\beta$.
   """
   def extensional_equality(%Type{args: [at | rest_ats]} = type) do
     x = Declaration.new_free_var("X", type)
@@ -462,6 +487,8 @@ defmodule ShotDs.Hol.Definitions do
   end
 
   def extensional_equality(type) do
-    raise "ArgumentError: type for extensional equality must be a function type. Got #{inspect(type)} instead."
+    raise ArgumentError,
+      message:
+        "Type for extensional equality must be a function type. Got #{inspect(type)} instead."
   end
 end

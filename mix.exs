@@ -1,7 +1,7 @@
 defmodule ShotDs.MixProject do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "1.0.0"
   @source_url "https://github.com/jcschuster/ShotDs"
 
   def project do
@@ -61,7 +61,8 @@ defmodule ShotDs.MixProject do
         "Simple Type Theory": [
           ShotDs.Stt.TermFactory,
           ShotDs.Stt.Semantics,
-          ShotDs.Stt.Numerals
+          ShotDs.Stt.Numerals,
+          ShotDs.Stt.Booleans
         ],
         "Higher-Order Logic": [
           ShotDs.Hol.Definitions,
@@ -76,7 +77,8 @@ defmodule ShotDs.MixProject do
         ],
         Parsing: [
           ShotDs.Parser,
-          ShotDs.Tptp
+          ShotDs.Tptp,
+          ShotDs.Hol.Sigils
         ]
       ],
       before_closing_head_tag: &before_closing_head_tag/1,

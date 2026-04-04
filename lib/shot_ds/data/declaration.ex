@@ -94,6 +94,9 @@ defmodule ShotDs.Data.Declaration do
   @spec fresh_const(Type.t()) :: const_t()
   def fresh_const(%Type{} = t), do: new_const(make_ref(), t)
 
+  @doc """
+  Pretty-prints a declaration.
+  """
   @spec format(t(), boolean()) :: String.t()
   def format(%__MODULE__{kind: kind, name: name, type: type}, hide_type \\ true) do
     prefix = if is_reference(name), do: kind_prefix(kind), else: ""

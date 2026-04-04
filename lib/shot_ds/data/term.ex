@@ -36,7 +36,8 @@ defmodule ShotDs.Data.Term do
   @type dummy_term_id :: 0
 
   @typedoc """
-  A term's id is given by an atomic positive integer where 0 denotes a dummy.
+  A term's id is given by an atomic positive (global) or negative (local)
+  integer where 0 denotes a dummy.
   """
   @type term_id :: global_term_id() | local_term_id() | dummy_term_id()
 
