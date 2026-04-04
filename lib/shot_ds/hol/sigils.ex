@@ -1,26 +1,43 @@
 defmodule ShotDs.Hol.Sigils do
   @moduledoc """
-  Provides a custom Elixir sigil for inline TH0 formula parsing and a wrapper
-  for handling context.
+  Provides custom Elixir sigils for inline TH0 formula parsing, TPTP problem
+  file parsing, context parsing and a wrapper for handling context.
   """
 
   alias ShotDs.Parser
+  alias ShotDs.Tptp
   alias ShotDs.Data.{Term, Context}
 
   @doc """
-  Handles the `~THF` sigil for parsing TH0 formulas.
+  Handles the `~f` sigil for parsing TH0 formulas.
 
   Returns the assigned global or local term ID. Raises a
   `ShotDs.Parser.ParseError` if the syntax is invalid.
   """
-  @spec sigil_THF(String.t(), [char()]) :: Term.term_id()
-  def sigil_THF(string, []) do
+  @spec sigil_f(String.t(), [char()]) :: Term.term_id()
+  def sigil_f(string, []) do
     ctx = Process.get(:hol_context) || Context.new()
     Parser.parse!(string, ctx)
   end
 
   @doc """
-  Provides a wrapper for the `~THF` sigil to consider some type environment.
+  Handles the `~p` sigil for parsing TPTP strings describing a TPTP proof
+  problem with `thf(...)` components.
+
+  Returns a `ShotDs.Data.Problem` struct describing the proof problem, raising
+  on errors.
+  """
+  def sigil_p(string, []), do: Tptp.parse_tptp_string!(string)
+
+  @doc """
+  Handles the `~e` sigil for parsing type environment (context).
+
+  Returns a `ShotDs.Data.Context` struct, raising on errors.
+  """
+  def sigil_e(string, []), do: Parser.parse_context!(string)
+
+  @doc """
+  Provides a wrapper for the `~f` sigil to consider some type environment.
   """
   @spec with_context(Context.t(), (-> res)) :: res
         when res: any()

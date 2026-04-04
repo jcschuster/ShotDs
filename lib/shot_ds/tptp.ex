@@ -15,8 +15,8 @@ defmodule ShotDs.Tptp do
 
   @doc """
   Parses a TPTP file in TH0 syntax at the provided path into a
-  `ShotDs.Data.Problem` struct. Returns `{:error, reason}` if a problem
-  occurred.
+  `ShotDs.Data.Problem` struct. Returns a tuple `{:ok, result}` or
+  `{:error, reason}`.
 
   This function serves two purposes: parsing a file from the TPTP problem
   library (https://tptp.org/TPTP/) or a custom problem file given by the user.
@@ -42,12 +42,34 @@ defmodule ShotDs.Tptp do
   end
 
   @doc """
-  Parses a string representing full a problem file in TPTP's TH0 syntax into a
-  `ShotDs.Data.Problem` struct.
+  Parses a TPTP file in TH0 syntax at the provided path into a
+  `ShotDs.Data.Problem` struct. Raises on errors.
 
-  The parsing of `content` only supports including files from the TPTP problem
-  library. If such includes are present, make sure that the `TPTP_ROOT`
-  environment variable is set.
+  This function serves two purposes: parsing a file from the TPTP problem
+  library (https://tptp.org/TPTP/) or a custom problem file given by the user.
+
+  `origin` indicates whether it is a file from the TPTP problem library and can
+  be accessed via the environment variable `TPTP_ROOT` pointing to the root
+  directory of the TPTP library.
+  """
+  @spec parse_tptp_file!(String.t(), :tptp_problem | :tptp_relative | :custom) :: Problem.t()
+  def parse_tptp_file!(problem, origin \\ :tptp_problem)
+      when is_binary(problem) and origin in [:tptp_problem, :tptp_relative, :custom] do
+    path = resolve_path!(problem, origin)
+    content = File.read!(path)
+    parse_tptp_string!(content, path)
+  end
+
+  @doc """
+  Parses a string representing full a problem file in TPTP's TH0 syntax into a
+  `ShotDs.Data.Problem` struct. Returns a tuple `{:ok, result}` or
+  `{:error, reason}`.
+
+  > #### Info {: .info}
+  >
+  > The parsing of `content` only supports including files from the TPTP problem
+  > library. If such includes are present, make sure that the `TPTP_ROOT`
+  > environment variable is set.
   """
   @spec parse_tptp_string(String.t(), String.t()) :: {:ok, Problem.t()} | {:error, String.t()}
   def parse_tptp_string(content, path \\ "memory") when is_binary(content) and is_binary(path) do
@@ -60,14 +82,38 @@ defmodule ShotDs.Tptp do
     end
   end
 
+  @doc """
+  Parses a string representing full a problem file in TPTP's TH0 syntax into a
+  `ShotDs.Data.Problem` struct. Raises on errors.
+
+  > #### Info {: .info}
+  >
+  > The parsing of `content` only supports including files from the TPTP problem
+  > library. If such includes are present, make sure that the `TPTP_ROOT`
+  > environment variable is set.
+  """
+  @spec parse_tptp_string!(String.t(), String.t()) :: Problem.t()
+  def parse_tptp_string!(content, path \\ "memory") when is_binary(content) and is_binary(path) do
+    with {:ok, tokens, "", _, _, _} <- Lexer.tokenize(content),
+         {:ok, problem} <- process_tokens(tokens, %Problem{path: path}) do
+      problem
+    else
+      {:ok, _tokens, unparsed, _, _, _} ->
+        raise ArgumentError, message: "Not a valid TPTP string. Failed to tokenize: #{unparsed}"
+
+      {:error, reason} ->
+        raise ArgumentError, message: "Not a valid TPTP string: #{reason}"
+    end
+  end
+
   # --- Path Resolution Helpers ---
 
   defp resolve_path(problem, :tptp_problem) do
-    case System.get_env("TPTP_ROOT") do
-      nil ->
-        {:error, "TPTP Parser Error: TPTP_ROOT environment variable is not set"}
+    case System.fetch_env("TPTP_ROOT") do
+      :error ->
+        {:error, "TPTP_ROOT environment variable is not set"}
 
-      root ->
+      {:ok, root} ->
         domain = String.slice(problem, 0..2)
 
         with_file_ending =
@@ -82,13 +128,34 @@ defmodule ShotDs.Tptp do
   end
 
   defp resolve_path(problem, :tptp_relative) do
-    case System.get_env("TPTP_ROOT") do
-      nil -> {:error, "TPTP Parser Error: TPTP_ROOT environment variable is not set"}
-      root -> {:ok, Path.join(root, problem)}
+    case System.fetch_env("TPTP_ROOT") do
+      :error -> {:error, "TPTP_ROOT environment variable is not set"}
+      {:ok, root} -> {:ok, Path.join(root, problem)}
     end
   end
 
   defp resolve_path(problem, :custom), do: {:ok, problem}
+
+  defp resolve_path!(problem, :tptp_problem) do
+    root = System.fetch_env!("TPTP_ROOT")
+    domain = String.slice(problem, 0..2)
+
+    with_file_ending =
+      if String.ends_with?(problem, ".p") do
+        problem
+      else
+        problem <> ".p"
+      end
+
+    Path.join([root, "Problems", domain, with_file_ending])
+  end
+
+  defp resolve_path!(problem, :tptp_relative) do
+    root = System.fetch_env!("TPTP_ROOT")
+    Path.join(root, problem)
+  end
+
+  defp resolve_path!(problem, :custom), do: problem
 
   # --- Token Processing ---
 
@@ -143,8 +210,9 @@ defmodule ShotDs.Tptp do
   end
 
   defp handle_thf_role(:type, _name, formula_tokens, problem) do
-    {entry_name, type_struct} = parse_type_decl(formula_tokens)
-    {:ok, %{problem | types: Map.put(problem.types, entry_name, type_struct)}}
+    with {:ok, {entry_name, type_struct}} <- parse_type_decl(formula_tokens) do
+      {:ok, %{problem | types: Map.put(problem.types, entry_name, type_struct)}}
+    end
   end
 
   defp handle_thf_role(role, name, formula_tokens, problem) do
@@ -209,10 +277,13 @@ defmodule ShotDs.Tptp do
 
   defp parse_type_decl([{:atom, name}, {:colon, _} | type_tokens]) do
     if type_tokens == [{:system, "$tType"}] do
-      {name, :base_type}
+      {:ok, {name, :base_type}}
     else
-      {type_struct, []} = Parser.parse_type_tokens(type_tokens)
-      {name, type_struct}
+      case Parser.parse_type_tokens(type_tokens) do
+        {:ok, {type_struct, []}} -> {:ok, {name, type_struct}}
+        {:ok, {_, unparsed}} -> {:error, "Could not parse #{inspect(unparsed)} to type."}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 

@@ -35,15 +35,15 @@ defmodule ShotDs.ParserEdgeCasesTest do
     assert %Term{type: %Type{goal: :o}} = term!(term_id)
   end
 
-  test "parse_type/1 with top-level parentheses" do
-    t1 = Parser.parse_type("($i>$o)")
-    t2 = Parser.parse_type("$i>$o")
+  test "parse_type!/1 with top-level parentheses" do
+    t1 = Parser.parse_type!("($i>$o)")
+    t2 = Parser.parse_type!("$i>$o")
 
     assert t1 == t2
   end
 
-  test "parse_type/1 deeply nested parentheses" do
-    complex = Parser.parse_type("(($i>($o))>$o)")
+  test "parse_type!/1 deeply nested parentheses" do
+    complex = Parser.parse_type!("(($i>($o))>$o)")
 
     # Should parse successfully despite nesting
     assert %Type{goal: :o} = complex
@@ -155,7 +155,7 @@ defmodule ShotDs.ParserEdgeCasesTest do
 
   test "parse_type_tokens/1 with function types" do
     {:ok, tokens, "", _, _, _} = Lexer.tokenize("$i > $o > $i")
-    {type, []} = Parser.parse_type_tokens(tokens)
+    {:ok, {type, []}} = Parser.parse_type_tokens(tokens)
 
     # Type parsing normalizes args to a flattened list
     assert %Type{goal: :i, args: [%Type{goal: :i}, %Type{goal: :o}]} = type
@@ -163,7 +163,7 @@ defmodule ShotDs.ParserEdgeCasesTest do
 
   test "parse_type_tokens/1 with single arrow" do
     {:ok, tokens, "", _, _, _} = Lexer.tokenize("$i > $o")
-    {type, []} = Parser.parse_type_tokens(tokens)
+    {:ok, {type, []}} = Parser.parse_type_tokens(tokens)
 
     assert %Type{goal: :o, args: [%Type{goal: :i}]} = type
   end

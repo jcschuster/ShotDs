@@ -3,14 +3,14 @@ defmodule ShotDs.ParserTest do
 
   alias ShotDs.Parser
 
-  test "parse_type/1 parses right-associative function types" do
-    assert Parser.parse_type("$o>$i>$o") == Type.new(:o, [:o, :i])
-    assert to_string(Parser.parse_type("$o>$i>$o")) == "o>i>o"
+  test "parse_type!/1 parses right-associative function types" do
+    assert Parser.parse_type!("$o>$i>$o") == Type.new(:o, [:o, :i])
+    assert to_string(Parser.parse_type!("$o>$i>$o")) == "o>i>o"
   end
 
   test "parse_type_tokens/1 parses parenthesized type expressions" do
     {:ok, tokens, "", _, _, _} = Lexer.tokenize("($i>$o)>$o")
-    {type, []} = Parser.parse_type_tokens(tokens)
+    {:ok, {type, []}} = Parser.parse_type_tokens(tokens)
 
     assert to_string(type) == "(i>o)>o"
   end
@@ -166,7 +166,7 @@ defmodule ShotDs.ParserTest do
   end
 
   test "parse_type/1 handles complex nested function types" do
-    complex = Parser.parse_type("($i>$i)>$o")
+    complex = Parser.parse_type!("($i>$i)>$o")
 
     assert %Type{goal: :o, args: [%Type{goal: :i, args: [%Type{goal: :i}]}]} = complex
   end

@@ -20,8 +20,8 @@ defmodule ShotDsTest do
     assert ShotDs.parse!("f @ X", ctx) == Parser.parse!("f @ X", ctx)
   end
 
-  test "parse_type/1 delegates to Parser.parse_type/1" do
-    assert ShotDs.parse_type("$i>$o") == Parser.parse_type("$i>$o")
+  test "parse_type!/1 delegates to Parser.parse_type!/1" do
+    assert ShotDs.parse_type!("$i>$o") == Parser.parse_type!("$i>$o")
   end
 
   test "parse_tptp_string/1 delegates to Tptp.parse_tptp_string/1" do

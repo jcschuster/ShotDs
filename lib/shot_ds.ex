@@ -12,25 +12,6 @@ defmodule ShotDs do
   alias ShotDs.Util.Formatter
 
   @doc """
-  Handles the `~THF` sigil for parsing TH0 formulas.
-
-  Returns the assigned global or local term ID. Raises a
-  `ShotDs.Parser.ParseError` if the syntax is invalid.
-
-  Delegates the function call to `ShotDs.Hol.Sigils.sigil_THF/2`.
-
-  ## Examples:
-
-      iex> ~THF<X & a> |> format_term()
-      "X ∧ a"
-
-      iex> ~THF"X @ Y" |> format_term(_hide_types = false)
-      "(X_T[OUFDH]>o Y_T[OUFDH])_o"
-  """
-  @spec sigil_THF(String.t(), [char()]) :: Term.term_id()
-  defdelegate sigil_THF(string, flags), to: ShotDs.Hol.Sigils
-
-  @doc """
   Parses a given string representing a formula in TH0 syntax with full type
   inference. Types which can't be inferred are assigned type variables.
   Variables on the outermost level are identified with type o. Returns the
@@ -72,15 +53,15 @@ defmodule ShotDs do
   @doc """
   Parses a HOL type from TPTP syntax into a `ShotDs.Data.Type` struct.
 
-  Delegates the function call to `ShotDs.Parser.parse_type/1`.
+  Delegates the function call to `ShotDs.Parser.parse_type!/1`.
 
   ## Example:
 
-      iex> parse_type("$i")
+      iex> parse_type!("$i")
       %ShotDs.Data.Type{goal: :i, args: []}
   """
-  @spec parse_type(String.t()) :: Type.t()
-  defdelegate parse_type(type_str), to: Parser
+  @spec parse_type!(String.t()) :: Type.t()
+  defdelegate parse_type!(type_str), to: Parser
 
   @doc """
   Parses a TPTP file in TH0 syntax at the provided path into a

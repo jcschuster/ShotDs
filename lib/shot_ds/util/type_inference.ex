@@ -22,11 +22,12 @@ defmodule ShotDs.Util.TypeInference do
   """
   @spec solve([{Type.t(), Type.t()}]) :: {:ok, type_substitution()} | {:error, String.t()}
   def solve(constraints) do
-    try do
-      {:ok, solve!(constraints)}
-    rescue
-      e in TypeError -> {:error, e.message}
-    end
+    Enum.reduce_while(constraints, {:ok, %{}}, fn {t1, t2}, {:ok, subst} ->
+      case unify(apply_subst(t1, subst), apply_subst(t2, subst), subst) do
+        {:ok, new_subst} -> {:cont, {:ok, new_subst}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
   end
 
   @doc """
@@ -35,9 +36,10 @@ defmodule ShotDs.Util.TypeInference do
   """
   @spec solve!([{Type.t(), Type.t()}]) :: type_substitution()
   def solve!(constraints) do
-    Enum.reduce(constraints, %{}, fn {t1, t2}, subst ->
-      unify(apply_subst(t1, subst), apply_subst(t2, subst), subst)
-    end)
+    case solve(constraints) do
+      {:ok, subst} -> subst
+      {:error, reason} -> raise TypeError, message: reason
+    end
   end
 
   @doc """
@@ -66,26 +68,18 @@ defmodule ShotDs.Util.TypeInference do
   # UNIFICATION LOGIC
   #############################################################################
 
-  @spec unify(general_type(), general_type(), type_substitution()) :: type_substitution()
+  @spec unify(general_type(), general_type(), type_substitution()) ::
+          {:ok, type_substitution()} | {:error, String.t()}
   defp unify(%Type{goal: g1, args: a1} = t1, %Type{goal: g2, args: a2} = t2, subst) do
     len1 = length(a1)
     len2 = length(a2)
 
     cond do
       t1 == t2 ->
-        subst
+        {:ok, subst}
 
       len1 == len2 ->
-        if !is_reference(g1) && !is_reference(g2) && g1 != g2 do
-          raise TypeError, message: "Type Error: Cannot unify concrete goals #{g1} and #{g2}."
-        end
-
-        subst_after_goal = unify_terms(g1, g2, subst)
-
-        Enum.zip(a1, a2)
-        |> Enum.reduce(subst_after_goal, fn {arg1, arg2}, acc_subst ->
-          unify(apply_subst(arg1, acc_subst), apply_subst(arg2, acc_subst), acc_subst)
-        end)
+        unify_same_arity(g1, a1, g2, a2, subst)
 
       len1 < len2 ->
         unify_partial(g1, a1, g2, a2, subst)
@@ -101,52 +95,76 @@ defmodule ShotDs.Util.TypeInference do
   defp unify(t1, t2, subst), do: unify_terms(t1, t2, subst)
 
   # Helper for unifying bases (atoms or references)
-  defp unify_terms(t, t, subst), do: subst
+  defp unify_terms(t, t, subst), do: {:ok, subst}
   defp unify_terms(ref, t, subst) when is_reference(ref), do: bind(ref, t, subst)
   defp unify_terms(t, ref, subst) when is_reference(ref), do: bind(ref, t, subst)
 
   defp unify_terms(t1, t2, _subst) do
-    raise TypeError, message: "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)}"
+    {:error, "Type Error: Cannot unify #{inspect(t1)} with #{inspect(t2)}"}
+  end
+
+  defp unify_same_arity(g1, a1, g2, a2, subst)
+       when is_reference(g1) or is_reference(g2) or g1 == g2 do
+    with {:ok, subst_after_goal} <- unify_terms(g1, g2, subst) do
+      Enum.zip(a1, a2)
+      |> Enum.reduce_while({:ok, subst_after_goal}, &reducer/2)
+    end
+  end
+
+  defp unify_same_arity(g1, _, g2, _, _),
+    do: {:error, "Type Error: Cannot unify concrete goals #{g1} and #{g2}."}
+
+  defp reducer({arg1, arg2}, {:ok, acc_subst}) do
+    case unify(apply_subst(arg1, acc_subst), apply_subst(arg2, acc_subst), acc_subst) do
+      {:ok, new_subst} -> {:cont, {:ok, new_subst}}
+      {:error, _} = err -> {:halt, err}
+    end
   end
 
   # Handles partial application unification
-  defp unify_partial(g_short, a_short, g_long, a_long, subst) do
-    if is_reference(g_short) do
-      {shared_a_long, extra_a_long} = Enum.split(a_long, length(a_short))
+  defp unify_partial(g_short, a_short, g_long, a_long, subst) when is_reference(g_short) do
+    {shared_a_long, extra_a_long} = Enum.split(a_long, length(a_short))
 
-      subst_after_args =
-        Enum.zip(a_short, shared_a_long)
-        |> Enum.reduce(subst, fn {a1, a2}, acc ->
-          unify(apply_subst(a1, acc), apply_subst(a2, acc), acc)
-        end)
+    subst_after_args_result =
+      Enum.zip(a_short, shared_a_long)
+      |> Enum.reduce_while({:ok, subst}, fn {a1, a2}, {:ok, acc} ->
+        case unify(apply_subst(a1, acc), apply_subst(a2, acc), acc) do
+          {:ok, new_acc} -> {:cont, {:ok, new_acc}}
+          {:error, _} = err -> {:halt, err}
+        end
+      end)
 
-      tail_type = Type.new(g_long, extra_a_long)
+    case subst_after_args_result do
+      {:ok, subst_after_args} ->
+        tail_type = Type.new(g_long, extra_a_long)
 
-      unify(
-        apply_subst(g_short, subst_after_args),
-        apply_subst(tail_type, subst_after_args),
-        subst_after_args
-      )
-    else
-      raise TypeError,
-        message: "Type Error: Cannot unify strict function types of different arities."
+        unify(
+          apply_subst(g_short, subst_after_args),
+          apply_subst(tail_type, subst_after_args),
+          subst_after_args
+        )
+
+      {:error, _} = err ->
+        err
     end
   end
+
+  defp unify_partial(_, _, _, _, _),
+    do: {:error, "Type Error: Cannot unify strict function types of different arities."}
 
   # --- BINDING AND OCCURS CHECK ---
 
   defp bind(ref, type, subst) do
     if occurs?(ref, type) do
-      raise TypeError,
-        message: "Type Error: Recursive type check failed (Occurs check on #{inspect(ref)})."
+      {:error, "Type Error: Recursive type check failed (Occurs check on #{inspect(ref)})."}
+    else
+      updated_subst =
+        Map.new(subst, fn {k, v} ->
+          {k, apply_subst(v, %{ref => type})}
+        end)
+
+      {:ok, Map.put(updated_subst, ref, type)}
     end
-
-    updated_subst =
-      Map.new(subst, fn {k, v} ->
-        {k, apply_subst(v, %{ref => type})}
-      end)
-
-    Map.put(updated_subst, ref, type)
   end
 
   defp occurs?(ref, %Type{goal: g, args: args}) do
