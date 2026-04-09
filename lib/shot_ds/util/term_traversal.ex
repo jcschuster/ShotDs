@@ -13,6 +13,8 @@ defmodule ShotDs.Util.TermTraversal do
   a post-order fashion (bottom-up), meaning the arguments of a term are mapped
   before the term itself is transformed. It uses a cache to memoize visits,
   ensuring that shared subterms are only processed once per unique environment.
+
+  Returns a tuple `{:ok, {result_id, final_cache}}` or `{:error, reason}`.
   """
   @spec map_term(
           term_id :: Term.term_id(),
@@ -79,6 +81,8 @@ defmodule ShotDs.Util.TermTraversal do
   a post-order fashion (bottom-up), meaning the arguments of a term are mapped
   before the term itself is transformed. It uses a cache to memoize visits,
   ensuring that shared subterms are only processed once per unique environment.
+
+  Returns a tuple `{result_id, final_cache}`.
   """
   @spec map_term!(
           term_id :: Term.term_id(),
@@ -126,26 +130,31 @@ defmodule ShotDs.Util.TermTraversal do
   This combinator visits the leaves of the term graph first, applies the
   `fold_fn`, and propagates the computed result up to the parent terms.
 
-  > #### Note {: .info}
-  >
-  > Unlike `map_term`, this basic fold does not implement DAG caching out of
-  > the box, so it will traverse shared subterms multiple times. It is best
-  > suited for lightweight reduction or formatting tasks.
+  Returns a tuple `{:ok, {result, final_cache}}` or `{:error, reason}`.
   """
-  @spec fold_term(Term.term_id(), (Term.t(), [a] -> a)) :: {:ok, a} | TF.lookup_error_t()
+  @spec fold_term(Term.term_id(), (Term.t(), [a] -> a), map()) ::
+          {:ok, {a, map()}} | TF.lookup_error_t()
         when a: var
-  def fold_term(term_id, fold_fn) do
-    with {:ok, term} <- TF.get_term(term_id),
-         {:ok, rev_args} <- fold_args(term.args, fold_fn, []) do
-      {:ok, fold_fn.(term, Enum.reverse(rev_args))}
+  def fold_term(term_id, fold_fn, cache \\ %{}) do
+    case Map.fetch(cache, term_id) do
+      {:ok, result} ->
+        {:ok, {result, cache}}
+
+      :error ->
+        with {:ok, term} <- TF.get_term(term_id),
+             {:ok, {rev_args, next_cache}} <- fold_args(term.args, fold_fn, cache, []) do
+          args = Enum.reverse(rev_args)
+          result = fold_fn.(term, args)
+          {:ok, {result, Map.put(next_cache, term_id, result)}}
+        end
     end
   end
 
-  defp fold_args([], _fold_fn, acc), do: {:ok, acc}
+  defp fold_args([], _fold_fn, cache, acc), do: {:ok, {acc, cache}}
 
-  defp fold_args([arg_id | rest], fold_fn, acc) do
-    case fold_term(arg_id, fold_fn) do
-      {:ok, res} -> fold_args(rest, fold_fn, [res | acc])
+  defp fold_args([arg_id | rest], fold_fn, cache, acc) do
+    case fold_term(arg_id, fold_fn, cache) do
+      {:ok, {res, next_cache}} -> fold_args(rest, fold_fn, next_cache, [res | acc])
       error -> error
     end
   end
@@ -157,16 +166,14 @@ defmodule ShotDs.Util.TermTraversal do
   This combinator visits the leaves of the term graph first, applies the
   `fold_fn`, and propagates the computed result up to the parent terms.
 
-  > #### Note {: .info}
-  >
-  > Unlike `map_term`, this basic fold does not implement DAG caching out of
-  > the box, so it will traverse shared subterms multiple times. It is best
-  > suited for lightweight reduction or formatting tasks.
+  Returns a tuple `{result, final_cache}`.
   """
-  @spec fold_term!(Term.term_id(), (Term.t(), [a] -> a)) :: a when a: var
-  def fold_term!(term_id, fold_fn) do
-    term = TF.get_term!(term_id)
-    folded_args = Enum.map(term.args, &fold_term!(&1, fold_fn))
-    fold_fn.(term, folded_args)
+  @spec fold_term!(Term.term_id(), (Term.t(), [a] -> a), map()) :: {a, map()}
+        when a: var
+  def fold_term!(term_id, fold_fn, cache \\ %{}) do
+    case fold_term(term_id, fold_fn, cache) do
+      {:ok, {result, final_cache}} -> {result, final_cache}
+      {:error, reason} -> raise ArgumentError, message: inspect(reason)
+    end
   end
 end

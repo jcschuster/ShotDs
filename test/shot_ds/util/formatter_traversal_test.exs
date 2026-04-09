@@ -94,7 +94,7 @@ defmodule ShotDs.Util.FormatterTraversalTest do
 
     assert Process.get(:transform_calls) == 2
 
-    {:ok, node_count} =
+    {:ok, {node_count, _final_cache}} =
       TermTraversal.fold_term(root_id, fn _term, child_counts -> 1 + Enum.sum(child_counts) end)
 
     assert node_count == 3

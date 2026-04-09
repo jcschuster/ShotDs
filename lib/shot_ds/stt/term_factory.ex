@@ -88,38 +88,50 @@ defmodule ShotDs.Stt.TermFactory do
   Also ensures recursively that the arguments are memoized.
   """
   @spec commit_to_global(Term.local_term_id() | Term.global_term_id()) ::
-          {:ok, Term.global_term_id()} | {:error, term()}
-  def commit_to_global(id)
-
-  def commit_to_global(id) when not is_integer(id) or id == 0, do: {:error, :invalid_id}
-
-  def commit_to_global(id) when id > 0, do: {:ok, id}
-
-  def commit_to_global(id) when id < 0 do
-    with {:ok, %Term{} = term} <- get_term(id),
-         {:ok, committed_args} <- commit_args(term.args) do
-      draft_term = %Term{term | args: committed_args}
-
-      signature = get_signature(draft_term)
-
-      case :ets.lookup(@table, signature) do
-        [{^signature, existing_id}] -> existing_id
-        [] -> generate_concurrent_id(draft_term)
-      end
+          {:ok, Term.global_term_id()} | {:error, :invalid_id}
+  def commit_to_global(id) do
+    case do_commit(id, %{}) do
+      {:ok, {global_id, _cache}} -> {:ok, global_id}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp commit_args(args) do
+  defp do_commit(id, _cache) when not is_integer(id) or id == 0, do: {:error, :invalid_id}
+  defp do_commit(id, cache) when id > 0, do: {:ok, {id, cache}}
+
+  defp do_commit(id, cache) when id < 0 and is_map_key(cache, id),
+    do: {:ok, {Map.get(cache, id), cache}}
+
+  defp do_commit(id, cache) when id < 0 do
+    with {:ok, %Term{} = term} <- get_term(id),
+         {:ok, committed_args, updated_cache} <- commit_args(term.args, cache) do
+      draft_term = %Term{term | args: committed_args}
+      signature = get_signature(draft_term)
+
+      final_id =
+        case :ets.lookup(@table, signature) do
+          [{^signature, existing_id}] -> existing_id
+          [] -> generate_concurrent_id(draft_term)
+        end
+
+      {:ok, {final_id, Map.put(updated_cache, id, final_id)}}
+    end
+  end
+
+  defp commit_args(args, cache) do
     result =
-      Enum.reduce_while(args, {:ok, []}, fn arg_id, {:ok, acc} ->
-        case commit_to_global(arg_id) do
-          {:ok, global_id} -> {:cont, {:ok, [global_id | acc]}}
-          {:error, _} = err -> {:halt, err}
+      Enum.reduce_while(args, {:ok, [], cache}, fn arg_id, {:ok, acc_args, current_cache} ->
+        case do_commit(arg_id, current_cache) do
+          {:ok, {global_id, next_cache}} ->
+            {:cont, {:ok, [global_id | acc_args], next_cache}}
+
+          {:error, _} = err ->
+            {:halt, err}
         end
       end)
 
     case result do
-      {:ok, reversed_args} -> {:ok, Enum.reverse(reversed_args)}
+      {:ok, reversed_args, final_cache} -> {:ok, Enum.reverse(reversed_args), final_cache}
       error -> error
     end
   end
@@ -132,26 +144,13 @@ defmodule ShotDs.Stt.TermFactory do
   Also ensures recursively that the arguments are memoized.
   """
   @spec commit_to_global!(Term.local_term_id() | Term.global_term_id()) :: Term.global_term_id()
-  def commit_to_global!(id)
+  def commit_to_global!(id) do
+    case commit_to_global(id) do
+      {:ok, global_id} ->
+        global_id
 
-  def commit_to_global!(id) when not is_integer(id) or id == 0 do
-    raise ArgumentError,
-      message: "Invalid ID: Expected positive or negative integer, got: #{inspect(id)}"
-  end
-
-  def commit_to_global!(id) when id > 0, do: id
-
-  def commit_to_global!(id) when id < 0 do
-    %Term{} = term = get_term!(id)
-    committed_args = Enum.map(term.args, &commit_to_global!/1)
-
-    draft_term = %Term{term | args: committed_args}
-
-    signature = get_signature(draft_term)
-
-    case :ets.lookup(@table, signature) do
-      [{^signature, existing_id}] -> existing_id
-      [] -> generate_concurrent_id(draft_term)
+      {:error, :invalid_id} ->
+        raise ArgumentError, message: "Invalid ID: Expected positive or negative integer."
     end
   end
 
@@ -263,7 +262,7 @@ defmodule ShotDs.Stt.TermFactory do
         existing_id
 
       [] ->
-        new_id = :ets.update_counter(local_table, :id_counter, {2, -1})
+        new_id = -:erlang.unique_integer([:positive])
         term = %Term{draft_term | id: new_id}
         :ets.insert(local_table, {new_id, term})
         :ets.insert(local_table, {signature, new_id})
@@ -273,7 +272,7 @@ defmodule ShotDs.Stt.TermFactory do
 
   defp generate_concurrent_id(%Term{} = draft_term) do
     signature = get_signature(draft_term)
-    new_id = :ets.update_counter(@table, :id_counter, {2, 1})
+    new_id = :erlang.unique_integer([:positive])
 
     term = %Term{draft_term | id: new_id}
 
@@ -288,6 +287,7 @@ defmodule ShotDs.Stt.TermFactory do
     else
       case :ets.lookup(@table, signature) do
         [{^signature, winning_id}] ->
+          :ets.delete(@table, new_id)
           winning_id
 
         [] ->
@@ -632,12 +632,13 @@ defmodule ShotDs.Stt.TermFactory do
          %Type{goal: goal_type, args: [arg1 | rest_types]} <- left_term.type,
          ^arg1 <- right_term.type do
       new_type = Type.new(goal_type, rest_types)
+      new_max_num = calc_new_max_num(left_term.head, left_term.args, bs)
 
       body_term = %Term{
         left_term
         | bvars: bs,
           type: new_type,
-          max_num: left_term.max_num - 1
+          max_num: new_max_num
       }
 
       body_id = memoize(body_term)

@@ -14,8 +14,6 @@ defmodule ShotDs.TermPoolOwner do
       write_concurrency: true
     ])
 
-    :ets.insert(:term_pool, {:id_counter, 0})
-
     {:ok, %{}}
   end
 end

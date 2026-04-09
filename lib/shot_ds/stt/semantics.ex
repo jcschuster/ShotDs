@@ -53,7 +53,10 @@ defmodule ShotDs.Stt.Semantics do
          fvar,
          acc_cache
        ) do
-    with {:ok, {shifted_replacement_id, _}} <- shift(replacement_id, depth, 0),
+    shift_cache = Map.get(acc_cache, :shift_cache, %{})
+
+    with {:ok, {shifted_replacement_id, next_shift_cache}} <-
+           shift(replacement_id, depth, 0, shift_cache),
          {:ok, reduced_id} <- TF.fold_apply(shifted_replacement_id, new_args),
          {:ok, %Term{bvars: red_bvars, fvars: red_fvars} = reduced_body} <-
            TF.get_term(reduced_id),
@@ -71,7 +74,9 @@ defmodule ShotDs.Stt.Semantics do
           max_num: new_max_num
       }
 
-      {{:ok, TF.memoize(wrapped_term)}, acc_cache}
+      final_acc_cache = Map.put(acc_cache, :shift_cache, next_shift_cache)
+
+      {{:ok, TF.memoize(wrapped_term)}, final_acc_cache}
     else
       error -> {error, acc_cache}
     end
@@ -92,49 +97,11 @@ defmodule ShotDs.Stt.Semantics do
   the term with the given id, erroring out if it encounters an invalid ID.
   """
   @spec subst!([Substitution.t()] | Substitution.t(), Term.term_id()) :: Term.term_id()
-  def subst!(substitutions, term_id)
-
-  def subst!([s | ss], term_id), do: subst!(ss, subst!(s, term_id))
-  def subst!([], term_id), do: term_id
-
-  def subst!(%Substitution{fvar: fvar, term_id: replacement_id}, term_id) do
-    update_env = fn term, depth -> depth + length(term.bvars) end
-    short_circuit = fn term, _depth -> fvar not in term.fvars end
-
-    transform = fn %Term{head: head, fvars: fvars, bvars: bvars} = term,
-                   new_args,
-                   depth,
-                   acc_cache ->
-      if head == fvar do
-        {shifted_replacement_id, _} = shift!(replacement_id, depth, 0)
-        reduced_id = TF.fold_apply!(shifted_replacement_id, new_args)
-        %Term{bvars: red_bvars, fvars: red_fvars} = reduced_body = TF.get_term!(reduced_id)
-
-        combined_bvars = bvars ++ red_bvars
-        final_fvars = Enum.uniq(List.delete(fvars, fvar) ++ red_fvars)
-        new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
-        new_max_num = calc_new_max_num!(reduced_body.head, reduced_body.args, combined_bvars)
-
-        wrapped_term = %Term{
-          reduced_body
-          | bvars: combined_bvars,
-            fvars: final_fvars,
-            type: new_type,
-            max_num: new_max_num
-        }
-
-        {TF.memoize(wrapped_term), acc_cache}
-      else
-        new_fvars = calc_new_fvars!(head, new_args)
-        new_max_num = calc_new_max_num!(term.head, new_args, term.bvars)
-
-        new_term = %Term{term | args: new_args, fvars: new_fvars, max_num: new_max_num}
-        {TF.memoize(new_term), acc_cache}
-      end
+  def subst!(substitutions, term_id) do
+    case subst(substitutions, term_id) do
+      {:ok, new_id} -> new_id
+      {:error, reason} -> raise ArgumentError, message: inspect(reason)
     end
-
-    {new_id, _cache} = map_term!(term_id, 0, update_env, transform, short_circuit)
-    new_id
   end
 
   @doc """
@@ -213,26 +180,10 @@ defmodule ShotDs.Stt.Semantics do
   """
   @spec shift!(Term.term_id(), integer(), non_neg_integer(), map()) :: {Term.term_id(), map()}
   def shift!(term_id, d, c \\ 0, cache \\ %{}) do
-    update_env = fn term, current_c -> current_c + length(term.bvars) end
-
-    transform = fn %Term{head: head, bvars: bvars} = term, new_args, current_c, acc_cache ->
-      new_head =
-        case head do
-          %Declaration{kind: :bv, name: index, type: type} when index > current_c ->
-            Declaration.new_bound_var(index + d, type)
-
-          decl ->
-            decl
-        end
-
-      new_max_num = calc_new_max_num!(new_head, new_args, bvars)
-      new_term = %Term{term | head: new_head, args: new_args, max_num: new_max_num}
-      {TF.memoize(new_term), acc_cache}
+    case shift(term_id, d, c, cache) do
+      {:ok, {new_id, final_cache}} -> {new_id, final_cache}
+      {:error, reason} -> raise ArgumentError, message: inspect(reason)
     end
-
-    short_circuit = fn term, current_c -> term.max_num <= current_c end
-
-    map_term!(term_id, c, update_env, transform, short_circuit, cache)
   end
 
   @doc """
@@ -261,8 +212,10 @@ defmodule ShotDs.Stt.Semantics do
        )
        when index == current_k do
     shift_amount = current_k - k
+    shift_cache = Map.get(acc_cache, :shift_cache, %{})
 
-    with {:ok, {shifted_replacement_id, _}} <- shift(replacement_id, shift_amount, 0),
+    with {:ok, {shifted_replacement_id, next_shift_cache}} <-
+           shift(replacement_id, shift_amount, 0, shift_cache),
          {:ok, reduced_body_id} <- TF.fold_apply(shifted_replacement_id, new_args),
          {:ok, %Term{bvars: red_bvars, max_num: red_max} = reduced_body} <-
            TF.get_term(reduced_body_id) do
@@ -279,7 +232,9 @@ defmodule ShotDs.Stt.Semantics do
           max_num: new_max_num
       }
 
-      {{:ok, TF.memoize(wrapped_term)}, acc_cache}
+      final_acc_cache = Map.put(acc_cache, :shift_cache, next_shift_cache)
+
+      {{:ok, TF.memoize(wrapped_term)}, final_acc_cache}
     else
       error -> {error, acc_cache}
     end
@@ -337,63 +292,10 @@ defmodule ShotDs.Stt.Semantics do
   @spec instantiate!(Term.term_id(), pos_integer(), Term.term_id(), map()) ::
           {Term.term_id(), map()}
   def instantiate!(term_id, k, replacement_id, cache \\ %{}) do
-    update_env = fn term, current_k -> current_k + length(term.bvars) end
-
-    transform = fn
-      %Term{head: %Declaration{kind: :bv, name: index}, bvars: bvars},
-      new_args,
-      current_k,
-      acc_cache
-      when index == current_k ->
-        shift_amount = current_k - k
-        {shifted_replacement_id, _} = shift!(replacement_id, shift_amount, 0)
-
-        reduced_body_id = TF.fold_apply!(shifted_replacement_id, new_args)
-        %Term{bvars: red_bvars, max_num: red_max} = reduced_body = TF.get_term!(reduced_body_id)
-
-        combined_bvars = bvars ++ red_bvars
-        new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
-
-        bvar_maxes = Enum.map(combined_bvars, & &1.name)
-        new_max_num = Enum.max([red_max | bvar_maxes], fn -> 0 end)
-
-        wrapped_term = %Term{
-          reduced_body
-          | bvars: combined_bvars,
-            type: new_type,
-            max_num: new_max_num
-        }
-
-        {TF.memoize(wrapped_term), acc_cache}
-
-      %Term{head: %Declaration{kind: :bv, name: index, type: type}, bvars: bvars} = term,
-      new_args,
-      current_k,
-      acc_cache
-      when index > current_k ->
-        new_head = Declaration.new_bound_var(index - 1, type)
-        new_max_num = calc_new_max_num!(new_head, new_args, bvars)
-        new_fvars = calc_new_fvars!(new_head, new_args)
-
-        new_term = %Term{
-          term
-          | head: new_head,
-            args: new_args,
-            fvars: new_fvars,
-            max_num: new_max_num
-        }
-
-        {TF.memoize(new_term), acc_cache}
-
-      %Term{head: head_decl, bvars: bvars} = term, new_args, _, acc_cache ->
-        new_max_num = calc_new_max_num!(head_decl, new_args, bvars)
-        new_fvars = calc_new_fvars!(head_decl, new_args)
-
-        new_term = %Term{term | args: new_args, fvars: new_fvars, max_num: new_max_num}
-        {TF.memoize(new_term), acc_cache}
+    case instantiate(term_id, k, replacement_id, cache) do
+      {:ok, {new_id, final_cache}} -> {new_id, final_cache}
+      {:error, reason} -> raise ArgumentError, message: inspect(reason)
     end
-
-    map_term!(term_id, k, update_env, transform, fn _, _ -> false end, cache)
   end
 
   ##############################################################################
@@ -421,18 +323,6 @@ defmodule ShotDs.Stt.Semantics do
     end
   end
 
-  defp calc_new_max_num!(head_decl, arg_ids, bvars) do
-    head_max =
-      case head_decl do
-        %Declaration{kind: :bv, name: n} -> n
-        _ -> 0
-      end
-
-    arg_maxes = Enum.map(arg_ids, fn id -> TF.get_term!(id).max_num end)
-    bvar_maxes = Enum.map(bvars, & &1.name)
-    Enum.max([head_max | arg_maxes ++ bvar_maxes], fn -> 0 end)
-  end
-
   defp calc_new_fvars(head_decl, arg_ids) do
     head_fvars =
       case head_decl do
@@ -442,24 +332,13 @@ defmodule ShotDs.Stt.Semantics do
 
     Enum.reduce_while(arg_ids, {:ok, []}, fn id, {:ok, acc} ->
       case TF.get_term(id) do
-        {:ok, term} -> {:cont, {:ok, acc ++ term.fvars}}
+        {:ok, term} -> {:cont, {:ok, [term.fvars | acc]}}
         error -> {:halt, error}
       end
     end)
     |> case do
-      {:ok, arg_fvars} -> {:ok, Enum.uniq(head_fvars ++ arg_fvars)}
+      {:ok, nested_fvars} -> {:ok, Enum.uniq(head_fvars ++ List.flatten(nested_fvars))}
       error -> error
     end
-  end
-
-  defp calc_new_fvars!(head_decl, arg_ids) do
-    head_fvars =
-      case head_decl do
-        %Declaration{kind: :fv} -> [head_decl]
-        _ -> []
-      end
-
-    arg_fvars = Enum.flat_map(arg_ids, fn id -> TF.get_term!(id).fvars end)
-    Enum.uniq(head_fvars ++ arg_fvars)
   end
 end

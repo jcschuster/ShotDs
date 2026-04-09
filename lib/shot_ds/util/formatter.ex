@@ -61,7 +61,7 @@ defmodule ShotDs.Util.Formatter do
 
   def format_term(term_id, hide_types) when is_integer(term_id) do
     case fold_term(term_id, &build_string(&1, &2, hide_types)) do
-      {:ok, {final_str, _is_complex}} -> {:ok, final_str}
+      {:ok, {{final_str, _is_complex}, _cache}} -> {:ok, final_str}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -80,8 +80,7 @@ defmodule ShotDs.Util.Formatter do
   def format_term!(term_or_id, hide_types \\ true)
 
   def format_term!(term_id, hide_types) when is_integer(term_id) do
-    {final_str, _is_complex} = fold_term!(term_id, &build_string(&1, &2, hide_types))
-
+    {{final_str, _is_complex}, _cache} = fold_term!(term_id, &build_string(&1, &2, hide_types))
     final_str
   end
 
