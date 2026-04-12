@@ -34,7 +34,7 @@ defmodule ShotDs.MixProject do
       # Code analyzer and type checker
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       # Documentation generation
-      {:ex_doc, "~> 0.21", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end
 

@@ -60,7 +60,8 @@ defmodule ShotDs.Stt.Semantics do
          {:ok, reduced_id} <- TF.fold_apply(shifted_replacement_id, new_args),
          {:ok, %Term{bvars: red_bvars, fvars: red_fvars} = reduced_body} <-
            TF.get_term(reduced_id),
-         combined_bvars = bvars ++ red_bvars,
+         shifted_bvars = Enum.map(bvars, fn bv -> %{bv | name: bv.name + length(red_bvars)} end),
+         combined_bvars = shifted_bvars ++ red_bvars,
          {:ok, new_max_num} <-
            calc_new_max_num(reduced_body.head, reduced_body.args, combined_bvars) do
       final_fvars = Enum.uniq(List.delete(fvars, fvar) ++ red_fvars)
@@ -219,7 +220,9 @@ defmodule ShotDs.Stt.Semantics do
          {:ok, reduced_body_id} <- TF.fold_apply(shifted_replacement_id, new_args),
          {:ok, %Term{bvars: red_bvars, max_num: red_max} = reduced_body} <-
            TF.get_term(reduced_body_id) do
-      combined_bvars = bvars ++ red_bvars
+      shifted_bvars = Enum.map(bvars, fn bv -> %{bv | name: bv.name + length(red_bvars)} end)
+      combined_bvars = shifted_bvars ++ red_bvars
+
       new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
 
       bvar_maxes = Enum.map(combined_bvars, & &1.name)
