@@ -16,7 +16,7 @@ defmodule ShotDs.Util.Formatter do
   declarations, terms (via ID or struct), substitutions and TPTP proof problems.
   Returns a tuple `{:ok, result}` or `{:error, reason}`.
   """
-  @spec format(Type.t() | Declaration.t() | Term.t() | Substitution.t() | Problem.t(), boolean()) ::
+  @spec format(Type.t() | Declaration.t() | Term.term_id() | Term.t() | Substitution.t() | Problem.t(), boolean()) ::
           {:ok, String.t()} | TF.lookup_error_t() | {:error, :unknown_argument}
   def format(hol_object, hide_types \\ true)
 
@@ -34,7 +34,7 @@ defmodule ShotDs.Util.Formatter do
   declarations, terms (via ID or struct), substitutions and TPTP proof problems.
   Raises on errors (for terms, substitutions and problems).
   """
-  @spec format!(Type.t() | Declaration.t() | Term.t() | Substitution.t() | Problem.t(), boolean()) ::
+  @spec format!(Type.t() | Declaration.t() | Term.term_id() | Term.t() | Substitution.t() | Problem.t(), boolean()) ::
           String.t()
   def format!(hol_object, hide_types \\ true)
 
