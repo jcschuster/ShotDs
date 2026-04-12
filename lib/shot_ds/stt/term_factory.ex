@@ -558,16 +558,13 @@ defmodule ShotDs.Stt.TermFactory do
   @spec make_abstr_term!(Term.term_id(), Declaration.t() | Term.term_id()) :: Term.term_id()
   def make_abstr_term!(term_id, var)
 
-  def make_abstr_term!(
-        term_id,
-        %Declaration{kind: :fv, type: var_type} = var
-      ) do
-    case get_term(term_id) do
-      {:ok, %Term{} = draft_term} ->
-        %Term{bvars: bvars, fvars: fvars} = draft_term
-        bv = Declaration.new_bound_var(length(bvars) + 1, var_type)
-        substituted = if var in fvars, do: bind_var(var, term_id), else: term_id
-        make_abstr_term!(substituted, bv)
+  def make_abstr_term!(term_id, var) do
+    case make_abstr_term(term_id, var) do
+      {:ok, res_term} ->
+        res_term
+
+      {:error, :invalid_id} ->
+        raise ArgumentError, message: "Given ID is not valid. Expected positive or negative integer."
 
       {:error, :non_existing_id} ->
         raise ArgumentError, message: "Given ID does not correspond to a memoized term."
@@ -575,44 +572,11 @@ defmodule ShotDs.Stt.TermFactory do
       {:error, :scratchpad_missing} ->
         raise ArgumentError,
           message: "Got a local ID but no scratchpad is active in the current process."
+
+      {:error, :var_term_not_primitive} ->
+        raise(ArgumentError, message: "Second argument is not a primitive variable term.")
     end
   end
-
-  def make_abstr_term!(
-        term_id,
-        %Declaration{kind: :bv, name: var_name, type: var_type} = var
-      ) do
-    case get_term(term_id) do
-      {:ok, %Term{} = draft_term} ->
-        %Term{bvars: bvars, type: term_type, max_num: max_num} = draft_term
-        new_type = Type.new(term_type, var_type)
-        new_max = max(var_name, max_num)
-        new_term = %Term{draft_term | bvars: [var | bvars], type: new_type, max_num: new_max}
-        memoize(new_term)
-
-      {:error, :non_existing_id} ->
-        raise ArgumentError, message: "Given ID does not correspond to a memoized term."
-
-      {:error, :scratchpad_missing} ->
-        raise ArgumentError,
-          message: "Got a local ID but no scratchpad is active in the current process."
-    end
-  end
-
-  def make_abstr_term!(term_id, var_term_id) do
-    with {:ok, %Term{head: var}} <- get_term(var_term_id),
-         {:ok, primitive?} <- primitive_term?(var_term_id) do
-      validate_and_make_abstr!(term_id, var, primitive?)
-    end
-  end
-
-  defp validate_and_make_abstr!(_term_id, %Declaration{kind: :co}, _primitive?),
-    do: raise(ArgumentError, message: "Given term is not a primitive variable term.")
-
-  defp validate_and_make_abstr!(_term_id, _var, false),
-    do: raise(ArgumentError, message: "Given term is not a primitive variable term.")
-
-  defp validate_and_make_abstr!(term_id, var, true), do: make_abstr_term!(term_id, var)
 
   @doc group: :"Term Construction API"
   @doc """
@@ -667,23 +631,10 @@ defmodule ShotDs.Stt.TermFactory do
   """
   @spec make_appl_term!(Term.term_id(), Term.term_id()) :: Term.term_id()
   def make_appl_term!(left_id, right_id) do
-    with {:ok, %Term{bvars: [_b | bs]} = left_term} <- get_term(left_id),
-         {:ok, %Term{} = right_term} <- get_term(right_id),
-         %Type{goal: goal_type, args: [arg1 | rest_types]} <- left_term.type,
-         ^arg1 <- right_term.type do
-      new_type = Type.new(goal_type, rest_types)
+    case make_appl_term(left_id, right_id) do
+      {:ok, res_term} ->
+        res_term
 
-      body_term = %Term{
-        left_term
-        | bvars: bs,
-          type: new_type,
-          max_num: left_term.max_num - 1
-      }
-
-      body_id = memoize(body_term)
-      {reduced_id, _cache} = instantiate!(body_id, 1, right_id)
-      reduced_id
-    else
       {:error, :non_existing_id} ->
         raise ArgumentError,
           message: "One of the given IDs does not correspond to a memoized term."
@@ -692,9 +643,8 @@ defmodule ShotDs.Stt.TermFactory do
         raise ArgumentError,
           message: "Got a local ID but no scratchpad is active in the current process."
 
-      _exception ->
-        raise ArgumentError,
-          message: "The terms have incompatible types."
+      {:error, :incompatible_types} ->
+        raise ArgumentError, message: "The terms have incompatible types."
     end
   end
 
