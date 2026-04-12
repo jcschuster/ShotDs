@@ -515,10 +515,9 @@ defmodule ShotDs.Stt.TermFactory do
 
   def make_abstr_term(term_id, %Declaration{kind: :fv, type: var_type} = var) do
     with {:ok, %Term{} = draft_term} <- get_term(term_id) do
-      %Term{bvars: bvars, fvars: fvars} = draft_term
+      %Term{bvars: bvars} = draft_term
       bv = Declaration.new_bound_var(length(bvars) + 1, var_type)
-      substituted = if var in fvars, do: bind_var(var, term_id), else: term_id
-      make_abstr_term(substituted, bv)
+      bind_var(var, term_id) |> make_abstr_term(bv)
     end
   end
 
