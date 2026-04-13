@@ -487,8 +487,7 @@ defmodule ShotDs.Stt.TermFactory do
 
       primitive? =
         length(bvars) == length(args) &&
-          Enum.reverse(bvars)
-          |> Enum.zip(args)
+          Enum.zip(bvars, args)
           |> Enum.all?(fn {bv, arg} -> make_term(bv) === arg end)
 
       {:ok, primitive?}

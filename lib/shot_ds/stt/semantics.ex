@@ -53,7 +53,7 @@ defmodule ShotDs.Stt.Semantics do
          fvar,
          acc_cache
        ) do
-    shift_cache = Map.get(acc_cache, :shift_cache, %{})
+    shift_cache = Map.get(acc_cache, {:shift_cache, depth}, %{})
 
     with {:ok, {shifted_replacement_id, next_shift_cache}} <-
            shift(replacement_id, depth, 0, shift_cache),
@@ -75,7 +75,7 @@ defmodule ShotDs.Stt.Semantics do
           max_num: new_max_num
       }
 
-      final_acc_cache = Map.put(acc_cache, :shift_cache, next_shift_cache)
+      final_acc_cache = Map.put(acc_cache, {:shift_cache, depth}, next_shift_cache)
 
       {{:ok, TF.memoize(wrapped_term)}, final_acc_cache}
     else
@@ -213,7 +213,7 @@ defmodule ShotDs.Stt.Semantics do
        )
        when index == current_k do
     shift_amount = current_k - k
-    shift_cache = Map.get(acc_cache, :shift_cache, %{})
+    shift_cache = Map.get(acc_cache, {:shift_cache, shift_amount}, %{})
 
     with {:ok, {shifted_replacement_id, next_shift_cache}} <-
            shift(replacement_id, shift_amount, 0, shift_cache),
@@ -235,7 +235,7 @@ defmodule ShotDs.Stt.Semantics do
           max_num: new_max_num
       }
 
-      final_acc_cache = Map.put(acc_cache, :shift_cache, next_shift_cache)
+      final_acc_cache = Map.put(acc_cache, {:shift_cache, shift_amount}, next_shift_cache)
 
       {{:ok, TF.memoize(wrapped_term)}, final_acc_cache}
     else
