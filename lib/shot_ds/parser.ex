@@ -784,17 +784,15 @@ defmodule ShotDs.Parser do
   defp parse_atomic([{:system, "$false"} | rest], ctx),
     do: {:ok, {{:pre_const, "$false", Definitions.type_o()}, rest, ctx}}
 
-  defp parse_atomic([{:eq, _} | rest], ctx),
-    do:
-      {:ok,
-       {{:pre_const, "=", Type.new(:o, [Type.fresh_type_var(), Type.fresh_type_var()])}, rest,
-        ctx}}
+  defp parse_atomic([{:eq, _} | rest], ctx) do
+    alpha = Type.fresh_type_var()
+    {:ok, {{:pre_const, "=", Type.new(:o, [alpha, alpha])}, rest, ctx}}
+  end
 
-  defp parse_atomic([{:neq, _} | rest], ctx),
-    do:
-      {:ok,
-       {{:pre_const, "!=", Type.new(:o, [Type.fresh_type_var(), Type.fresh_type_var()])}, rest,
-        ctx}}
+  defp parse_atomic([{:neq, _} | rest], ctx) do
+    alpha = Type.fresh_type_var()
+    {:ok, {{:pre_const, "!=", Type.new(:o, [alpha, alpha])}, rest, ctx}}
+  end
 
   defp parse_atomic([{:equiv, _} | rest], ctx),
     do: {:ok, {{:pre_const, "<=>", Definitions.type_ooo()}, rest, ctx}}
