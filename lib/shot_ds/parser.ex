@@ -1,15 +1,15 @@
 defmodule ShotDs.Parser do
   @moduledoc """
-  Contains functionality to parse a formula in TH0 syntax with full type
-  inference. The algorithm is similar to Hindley-Milner type systems but for
-  simplicity reasons without the optimizations found in algorithms J or W.
-  Uses Robinson's first-order unification algorithm for type inference. A
-  context can be specified to clear up unknown types. If terms still have
-  unknown type after parsing, unifies their type with type o. The main entry
-  point is the `parse/2` function.
+  Contains functionality to parse a formula in THF syntax with full type
+  inference. The algorithm uses Hindley-Milner rank-1 polymorphism and
+  implements algorithm W for type inference. The resulting constraints are
+  resolved via Robinson's first-order unification algorithm. A context can be
+  specified to clear up unknown types. If terms still have unknown/polymorphic
+  type after parsing, it can be specified to unify their type with type o. The
+  main entry point is the `parse/2` function.
 
-  The parser follows standard TH0 precedence rules. The binding strength is listed
-  below from **strongest (tightest binding)** to **weakest**.
+  The parser follows standard TH0 precedence rules. The binding strength is
+  listed below from **strongest (tightest binding)** to **weakest**.
 
       (Strongest)   @                   [Application]
                     =, !=               [Equality]
@@ -40,20 +40,11 @@ defmodule ShotDs.Parser do
   > defined in the module `ShotDs.Hol.Sigils`.
   """
 
-  alias ShotDs.Data.{Type, Declaration, Term, Context}
+  alias ShotDs.Data.{Type, TypeScheme, Declaration, Term, Context}
   alias ShotDs.Hol.Definitions
   alias ShotDs.Stt.TermFactory, as: TF
   alias ShotDs.Util.Lexer
   alias ShotDs.Util.TypeInference, as: TI
-
-  @dialyzer {:no_opaque,
-             parse: 1,
-             parse!: 1,
-             parse_tokens: 1,
-             parse_tokens!: 1,
-             parse_context: 1,
-             parse_context_tokens: 2}
-  @dialyzer {:nowarn_function, parse!: 1}
 
   defmodule ParseError do
     @moduledoc """
@@ -70,6 +61,11 @@ defmodule ShotDs.Parser do
 
   Returns `{:ok, term_id}` or `{:error, reason}`
 
+  ## Options:
+
+  - `ctx`: a `ShotDs.Data.Context` struct for providing type information
+  - `force_o?`: identify type variables on the outermost level type o
+
   ## Example:
 
       iex> match?({:ok, _parsed}, parse("X & a"))
@@ -78,11 +74,11 @@ defmodule ShotDs.Parser do
       iex> match?({:ok, _parsed}, parse("X &"))
       false
   """
-  @spec parse(String.t(), Context.t()) :: {:ok, Term.term_id()} | {:error, String.t()}
-  def parse(formula_str, context \\ Context.new()) do
+  @spec parse(String.t(), Keyword.t()) :: {:ok, Term.term_id()} | {:error, String.t()}
+  def parse(formula_str, opts \\ []) do
     case Lexer.tokenize(formula_str) do
       {:ok, tokens, "", _, _, _} ->
-        parse_tokens(tokens, context)
+        parse_tokens(tokens, opts) |> decorate_with_line_col(formula_str)
 
       {:ok, _, unparsed, _, _, _} ->
         {:error, "Lexer stopped early. Unparsed content: #{unparsed}"}
@@ -95,20 +91,25 @@ defmodule ShotDs.Parser do
   be inferred are assigned type variables. Variables on the outermost level are
   identified with type o. Returns the assigned ID of the created term.
 
+  ## Options:
+
+  - `ctx`: a `ShotDs.Data.Context` struct for providing type information
+  - `force_o?`: identify type variables on the outermost level type o
+
   ## Example:
 
       iex> parse!("X & a") |> format_term!()
       "X ∧ a"
 
-      iex> parse!("X @ Y") |> format_term!(_hide_types = false)
+      iex> parse!("X @ Y", force_o: true) |> format_term!(_hide_types = false)
       "(X_T[OUFDH]>o Y_T[OUFDH])_o"
 
-      iex> parse!("X @ Y", ~e(X::$i>$i, Y::$i)) |> format_term!(false)
+      iex> parse!("X @ Y", ctx: ~e(X:$i>$i, Y:$i)) |> format_term!(false)
       "(X_i>i Y_i)_i"
   """
-  @spec parse!(String.t(), Context.t()) :: Term.term_id()
-  def parse!(formula_str, context \\ Context.new()) do
-    case parse(formula_str, context) do
+  @spec parse!(String.t(), Keyword.t() | Context.t()) :: Term.term_id()
+  def parse!(formula_str, opts \\ []) do
+    case parse(formula_str, opts) do
       {:ok, term_id} -> term_id
       {:error, msg} -> raise ParseError, message: msg
     end
@@ -116,34 +117,49 @@ defmodule ShotDs.Parser do
 
   @doc """
   Safely parses a given list of tokens with full type inference. Types which
-  can't be inferred are assigned type variables. Variables on the outermost
-  level are identified with type o. Returns the assigned ID of the created term.
+  can't be inferred are assigned type variables. Returns the assigned ID of the
+  created term.
+
+  ## Options:
+
+  - `ctx`: a `ShotDs.Data.Context` struct for providing type information
+  - `force_o`: identify type variables on the outermost level type o
 
   Returns `{:ok, term_id}` or `{:error, reason}`.
   """
-  @spec parse_tokens(Lexer.tokens(), Context.t()) :: {:ok, Term.term_id()} | {:error, String.t()}
-  def parse_tokens(tokens, context \\ Context.new()) do
-    with {:ok, {pre_term, [], almost_final_ctx}} <- parse_formula(tokens, context),
+  @spec parse_tokens(Lexer.tokens(), Keyword.t() | Context.t()) ::
+          {:ok, Term.term_id()} | {:error, String.t()}
+  def parse_tokens(tokens, opts \\ []) do
+    context = Keyword.get(opts, :ctx, Context.new())
+    force_o = Keyword.get(opts, :force_o, false)
+
+    with {:ok, {pre_term, [], _ctx, subst}} <- parse_formula(tokens, context, %{}),
          root_type = get_pre_type(pre_term),
-         {:ok, substitutions} <- TI.solve(almost_final_ctx.constraints),
-         resolved_root = TI.apply_subst(root_type, substitutions),
-         final_ctx =
-           if(Type.type_var?(resolved_root),
-             do: Context.add_constraint(almost_final_ctx, resolved_root, Definitions.type_o()),
-             else: almost_final_ctx
-           ),
-         {:ok, final_substitutions} <- TI.solve(final_ctx.constraints) do
-      {:ok, build_term(pre_term, final_substitutions)}
+         resolved_root = TI.apply_subst(root_type, subst),
+         {:ok, final_subst} <-
+           if(Type.type_var?(resolved_root) and force_o,
+             do: TI.unify(resolved_root, Definitions.type_o(), subst),
+             else: {:ok, subst}
+           ) do
+      {:ok, build_term(pre_term, final_subst)}
     else
-      {:ok, {_, remaining, _}} -> {:error, "Unexpected tokens remaining: #{inspect(remaining)}"}
-      {:error, reason} -> {:error, reason}
+      {:ok, {_, remaining, _, _}} ->
+        {:error, "Unexpected tokens remaining: #{inspect(remaining)}"}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   @doc """
   Parses a given list of tokens with full type inference. Types which can't be
-  inferred are assigned type variables. Variables on the outermost level are
-  identified with type o. Returns the assigned ID of the created term.
+  inferred are assigned type variables. Returns the assigned ID of the created
+  term.
+
+  ## Options:
+
+  - `ctx`: a `ShotDs.Data.Context` struct for providing type information
+  - `force_o`: identify type variables on the outermost level type o
 
   ## Example:
 
@@ -151,9 +167,9 @@ defmodule ShotDs.Parser do
       iex> parse_tokens!(tokens) |> format_term!()
       "⊥"
   """
-  @spec parse_tokens!(Lexer.tokens(), Context.t()) :: Term.term_id()
-  def parse_tokens!(tokens, context \\ Context.new()) do
-    case parse_tokens(tokens, context) do
+  @spec parse_tokens!(Lexer.tokens(), Keyword.t()) :: Term.term_id()
+  def parse_tokens!(tokens, opts \\ []) do
+    case parse_tokens(tokens, opts) do
       {:ok, term_id} -> term_id
       {:error, msg} -> raise ParseError, message: msg
     end
@@ -213,7 +229,7 @@ defmodule ShotDs.Parser do
           {:ok, {Type.t(), Lexer.tokens()}} | {:error, String.t()}
   def parse_type_tokens(tokens) do
     case parse_atomic_type(tokens) do
-      {:ok, {lhs, [{:arrow, _} | rest]}} ->
+      {:ok, {lhs, [{:arrow, _, _} | rest]}} ->
         with {:ok, {rhs, rest2}} <- parse_type_tokens(rest),
              do: {:ok, {Type.new(rhs, lhs), rest2}}
 
@@ -225,15 +241,26 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_atomic_type([{:system, "$i"} | rest]), do: {:ok, {Type.new(:i), rest}}
-  defp parse_atomic_type([{:system, "$o"} | rest]), do: {:ok, {Type.new(:o), rest}}
+  defp parse_atomic_type([{:system, "$i", _} | rest]), do: {:ok, {Type.new(:i), rest}}
+  defp parse_atomic_type([{:system, "$o", _} | rest]), do: {:ok, {Type.new(:o), rest}}
 
-  defp parse_atomic_type([{:atom, name} | rest]),
+  defp parse_atomic_type([{:system, name, _} | rest]),
+    do: {:ok, {Type.new(name |> String.trim_leading("$") |> String.to_atom()), rest}}
+
+  defp parse_atomic_type([{:atom, name, _} | rest]),
     do: {:ok, {Type.new(String.to_atom(name)), rest}}
 
-  defp parse_atomic_type([{:lparen, _} | rest]) do
+  defp parse_atomic_type([{:distinct, name, _} | rest]) do
+    name
+    |> String.trim("'")
+    |> String.to_atom()
+    |> Type.new()
+    |> then(&{:ok, {&1, rest}})
+  end
+
+  defp parse_atomic_type([{:lparen, _, _} | rest]) do
     case parse_type_tokens(rest) do
-      {:ok, {type, [{:rparen, _} | rest2]}} -> {:ok, {type, rest2}}
+      {:ok, {type, [{:rparen, _, _} | rest2]}} -> {:ok, {type, rest2}}
       {:ok, {_, other}} -> {:error, "Expected ')', found #{inspect(other)}"}
       {:error, _} = err -> err
     end
@@ -244,6 +271,196 @@ defmodule ShotDs.Parser do
 
   defp parse_atomic_type([]), do: {:error, "Cannot parse empty tokens to type."}
 
+  ################################ TYPE SCHEMES ################################
+
+  @doc """
+  Parses a TPTP TH1 type scheme from a string.
+
+  Two forms are accepted:
+
+  - **Explicit (TH1):** `!>[A:$tType, B:$tType]: t` — every type variable in
+    the body must be declared in the binder list. The kind annotation
+    `:$tType` is also accepted-without (extension).
+  - **Implicit:** `t` — every uppercase identifier in `t` is treated as an
+    implicitly universally-quantified type variable.
+
+  Returns `{:ok, scheme}` or `{:error, reason}`.
+
+  ## Examples
+
+      iex> match?({:ok, %ShotDs.Data.TypeScheme{vars: [_]}},
+      ...>   parse_type_scheme("!>[A:$tType]: (A > A)"))
+      true
+
+      iex> match?({:ok, %ShotDs.Data.TypeScheme{vars: [_]}},
+      ...>   parse_type_scheme("A > A"))
+      true
+
+      iex> match?({:ok, %ShotDs.Data.TypeScheme{vars: []}},
+      ...>   parse_type_scheme("$i > $o"))
+      true
+  """
+  @spec parse_type_scheme(String.t()) :: {:ok, TypeScheme.t()} | {:error, String.t()}
+  def parse_type_scheme(scheme_str) do
+    with {:ok, tokens, "", _, _, _} <- Lexer.tokenize(scheme_str),
+         {:ok, {scheme, []}} <- parse_type_scheme_tokens(tokens) do
+      {:ok, scheme}
+    else
+      {:ok, _, unparsed, _, _, _} ->
+        {:error, "Lexer stopped early. Unparsed content: #{unparsed}"}
+
+      {:ok, {_, remaining}} ->
+        {:error, "Failed to parse #{inspect(remaining)} into a type scheme"}
+
+      {:error, reason} ->
+        {:error, "Failed to parse type scheme: #{reason}"}
+    end
+  end
+
+  @doc """
+  Parses a TPTP TH1 type scheme from a string, raising on errors. See
+  `parse_type_scheme/1` for the accepted syntax.
+  """
+  @spec parse_type_scheme!(String.t()) :: TypeScheme.t()
+  def parse_type_scheme!(scheme_str) do
+    case parse_type_scheme(scheme_str) do
+      {:ok, scheme} -> scheme
+      {:error, msg} -> raise ParseError, message: msg
+    end
+  end
+
+  @doc """
+  Parses a type scheme from a list of tokens. Returns the constructed
+  `TypeScheme` along with the remaining tokens, or `{:error, reason}`.
+  """
+  @spec parse_type_scheme_tokens(Lexer.tokens()) ::
+          {:ok, {TypeScheme.t(), Lexer.tokens()}} | {:error, String.t()}
+  def parse_type_scheme_tokens([{:forall_type, _, _}, {:lbracket, _, _} | rest]) do
+    with {:ok, {bound_vars, rest_after_binder, env}} <- parse_th1_binder(rest, %{}, []),
+         [{:colon, _, _} | body_tokens] <- rest_after_binder,
+         {:ok, {body_type, rest_after_body, final_env}} <-
+           parse_poly_type_tokens(body_tokens, env) do
+      declared = MapSet.new(bound_vars)
+      body_vars = Type.free_type_vars(body_type)
+      unbound = MapSet.difference(body_vars, declared)
+      names_by_ref = Map.new(final_env, fn {name, ref} -> {ref, name} end)
+
+      if MapSet.size(unbound) == 0 do
+        {:ok, {TypeScheme.new(bound_vars, body_type), rest_after_body}}
+      else
+        unbound_names =
+          unbound
+          |> MapSet.to_list()
+          |> Enum.map(&Map.get(names_by_ref, &1, "?"))
+          |> Enum.sort()
+
+        {:error,
+         "Type Error: type variable(s) #{Enum.join(unbound_names, ", ")} appear in !> body " <>
+           "but are not declared in the binder."}
+      end
+    else
+      {:error, _} = err ->
+        err
+
+      tokens when is_list(tokens) ->
+        {:error, "Syntax Error: expected ':' after !> binder list, got #{inspect(tokens)}"}
+    end
+  end
+
+  def parse_type_scheme_tokens(tokens) do
+    with {:ok, {body_type, rest, _env}} <- parse_poly_type_tokens(tokens, %{}) do
+      {:ok, {TypeScheme.generalize(body_type, MapSet.new()), rest}}
+    end
+  end
+
+  @spec parse_th1_binder(Lexer.tokens(), %{String.t() => reference()}, [reference()]) ::
+          {:ok, {[reference()], Lexer.tokens(), %{String.t() => reference()}}}
+          | {:error, String.t()}
+  defp parse_th1_binder(tokens, env, acc) do
+    case tokens do
+      [{:var, name, _}, {:colon, _, _}, {:system, "$tType", _} | rest] ->
+        {ref, env2} = ensure_type_var_ref(name, env)
+        continue_th1_binder(rest, env2, [ref | acc])
+
+      [{:var, name, _} | rest] ->
+        {ref, env2} = ensure_type_var_ref(name, env)
+        continue_th1_binder(rest, env2, [ref | acc])
+
+      other ->
+        {:error, "Syntax Error: expected type variable in !> binder, got #{inspect(other)}"}
+    end
+  end
+
+  defp continue_th1_binder([{:comma, _, _} | rest], env, acc),
+    do: parse_th1_binder(rest, env, acc)
+
+  defp continue_th1_binder([{:rbracket, _, _} | rest], env, acc),
+    do: {:ok, {Enum.reverse(acc), rest, env}}
+
+  defp continue_th1_binder(other, _env, _acc),
+    do: {:error, "Syntax Error: expected ',' or ']' in !> binder, got #{inspect(other)}"}
+
+  defp ensure_type_var_ref(name, env) do
+    case Map.fetch(env, name) do
+      {:ok, ref} ->
+        {ref, env}
+
+      :error ->
+        ref = make_ref()
+        {ref, Map.put(env, name, ref)}
+    end
+  end
+
+  ########################## POLY TYPE PARSERS #################################
+
+  @spec parse_poly_type_tokens(Lexer.tokens(), %{String.t() => reference()}) ::
+          {:ok, {Type.t(), Lexer.tokens(), %{String.t() => reference()}}}
+          | {:error, String.t()}
+  defp parse_poly_type_tokens(tokens, env) do
+    case parse_atomic_poly_type(tokens, env) do
+      {:ok, {lhs, [{:arrow, _, _} | rest], env2}} ->
+        with {:ok, {rhs, rest2, env3}} <- parse_poly_type_tokens(rest, env2),
+             do: {:ok, {Type.new(rhs, lhs), rest2, env3}}
+
+      {:ok, _} = ok ->
+        ok
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp parse_atomic_poly_type([{:system, "$i", _} | rest], env),
+    do: {:ok, {Type.new(:i), rest, env}}
+
+  defp parse_atomic_poly_type([{:system, "$o", _} | rest], env),
+    do: {:ok, {Type.new(:o), rest, env}}
+
+  defp parse_atomic_poly_type([{:system, name, _} | rest], env),
+    do: {:ok, {Type.new(name |> String.trim_leading("$") |> String.to_atom()), rest, env}}
+
+  defp parse_atomic_poly_type([{:atom, name, _} | rest], env),
+    do: {:ok, {Type.new(String.to_atom(name)), rest, env}}
+
+  defp parse_atomic_poly_type([{:var, name, _} | rest], env) do
+    {ref, env2} = ensure_type_var_ref(name, env)
+    {:ok, {Type.new(ref), rest, env2}}
+  end
+
+  defp parse_atomic_poly_type([{:lparen, _, _} | rest], env) do
+    case parse_poly_type_tokens(rest, env) do
+      {:ok, {type, [{:rparen, _, _} | rest2], env2}} -> {:ok, {type, rest2, env2}}
+      {:ok, {_, other, _}} -> {:error, "Expected ')', found #{inspect(other)}"}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp parse_atomic_poly_type([other | _rest], _env),
+    do: {:error, "#{inspect(other)} is not a valid type token."}
+
+  defp parse_atomic_poly_type([], _env),
+    do: {:error, "Cannot parse empty tokens to type."}
+
   ################################## CONTEXT ###################################
 
   @doc """
@@ -252,7 +469,7 @@ defmodule ShotDs.Parser do
 
   ## Example
 
-      iex> parse_context("X::$i, c::$o>$o")
+      iex> parse_context("X:$i, c:$o>$o")
   """
   @spec parse_context(String.t()) :: {:ok, Context.t()} | {:error, String.t()}
   def parse_context(context_str) do
@@ -293,32 +510,30 @@ defmodule ShotDs.Parser do
           {:ok, Context.t()} | {:error, String.t()}
   defp parse_context_tokens(tokens, ctx)
 
-  defp parse_context_tokens([{:var, name}, {:colon, ":"} | rest], ctx) do
-    with {:ok, {type, rest2}} <- parse_type_tokens(rest) do
+  defp parse_context_tokens([{:var, name, _}, {:colon, ":", _} | rest], ctx) do
+    with {:ok, {type, rest2, _env}} <- parse_poly_type_tokens(rest, %{}) do
       ctx2 = Context.put_var(ctx, name, type)
-
-      case rest2 do
-        [] -> {:ok, ctx2}
-        [{:comma, ","} | rest3] -> parse_context_tokens(rest3, ctx2)
-        [other | _] -> {:error, "Could not parse context token #{inspect(other)}."}
-      end
+      finalize_context_tokens(rest2, ctx2)
     end
   end
 
-  defp parse_context_tokens([{:atom, name}, {:colon, ":"} | rest], ctx) do
-    with {:ok, {type, rest2}} <- parse_type_tokens(rest) do
-      ctx2 = Context.put_const(ctx, name, type)
-
-      case rest2 do
-        [] -> {:ok, ctx2}
-        [{:comma, ","} | rest3] -> parse_context_tokens(rest3, ctx2)
-        [other | _] -> {:error, "Could not parse context token #{inspect(other)}."}
-      end
+  defp parse_context_tokens([{:atom, name, _}, {:colon, ":", _} | rest], ctx) do
+    with {:ok, {scheme, rest2}} <- parse_type_scheme_tokens(rest) do
+      ctx2 = Context.put_const(ctx, name, scheme)
+      finalize_context_tokens(rest2, ctx2)
     end
   end
 
   defp parse_context_tokens(other, _ctx),
     do: {:error, "Could not parse #{inspect(other)} into a context struct."}
+
+  defp finalize_context_tokens([], ctx), do: {:ok, ctx}
+
+  defp finalize_context_tokens([{:comma, ",", _} | rest], ctx),
+    do: parse_context_tokens(rest, ctx)
+
+  defp finalize_context_tokens([other | _], _ctx),
+    do: {:error, "Could not parse context token #{inspect(other)}."}
 
   ##############################################################################
   # TERM BUILDER
@@ -381,197 +596,221 @@ defmodule ShotDs.Parser do
   # PARSING LOGIC
   ##############################################################################
 
-  defp constrain(ctx, term_node, expected_type) do
-    term_type = get_pre_type(term_node)
-    Context.add_constraint(ctx, term_type, expected_type)
+  defp decorate_with_line_col({:ok, _} = ok, _source), do: ok
+
+  defp decorate_with_line_col({:error, msg}, source) when is_binary(msg) do
+    decorated =
+      Regex.replace(~r/\[byte:(\d+)\]/, msg, fn _full, n_str ->
+        {n, _} = Integer.parse(n_str)
+        {line, col} = Lexer.byte_offset_to_line_col(source, n)
+        "[line #{line}, column #{col}]"
+      end)
+
+    {:error, decorated}
+  end
+
+  defp unify_at(t1, t2, subst, offset) do
+    case TI.unify(t1, t2, subst) do
+      {:ok, new_subst} -> {:ok, new_subst}
+      {:error, reason} -> {:error, "[byte:#{offset}] #{reason}"}
+    end
   end
 
   defp get_pre_type({_, _, _, type}), do: type
   defp get_pre_type({_, _, _, _, type}), do: type
   defp get_pre_type({_, _, type}), do: type
 
+  defp peek_offset([{_, _, off} | _]), do: off
+  defp peek_offset(_), do: 0
+
   # Level 1: <, >, <=, =>, <=>, <~>
 
-  defp parse_formula(tokens, ctx) do
-    with {:ok, {lhs, rest, ctx2}} <- parse_disjunction(tokens, ctx) do
-      parse_formula_op(lhs, rest, ctx2)
+  defp parse_formula(tokens, ctx, subst) do
+    with {:ok, {lhs, rest, ctx2, subst2}} <- parse_disjunction(tokens, ctx, subst) do
+      parse_formula_op(lhs, rest, ctx2, subst2)
     end
   end
 
-  defp parse_formula_op(lhs, [{:equiv, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_formula(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_formula_op(lhs, [{:equiv, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_formula(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app,
          {:pre_app, {:pre_const, "<=>", Definitions.type_ooo()}, lhs, Definitions.type_oo()}, rhs,
          Definitions.type_o()}
 
-      {:ok, {term, rest2, ctx3}}
+      {:ok, {term, rest2, ctx2, s3}}
     end
   end
 
-  defp parse_formula_op(lhs, [{:implies, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_formula(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_formula_op(lhs, [{:implies, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_formula(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app,
          {:pre_app, {:pre_const, "=>", Definitions.type_ooo()}, lhs, Definitions.type_oo()}, rhs,
          Definitions.type_o()}
 
-      {:ok, {term, rest2, ctx3}}
+      {:ok, {term, rest2, ctx2, s3}}
     end
   end
 
-  defp parse_formula_op(lhs, [{:implied_by, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_formula(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_formula_op(lhs, [{:implied_by, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_formula(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app,
          {:pre_app, {:pre_const, "=>", Definitions.type_ooo()}, rhs, Definitions.type_oo()}, lhs,
          Definitions.type_o()}
 
-      {:ok, {term, rest2, ctx3}}
+      {:ok, {term, rest2, ctx2, s3}}
     end
   end
 
-  defp parse_formula_op(lhs, [{:xor, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_formula(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_formula_op(lhs, [{:xor, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_formula(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app, {:pre_const, "~", Definitions.type_oo()},
          {:pre_app,
           {:pre_app, {:pre_const, "<=>", Definitions.type_ooo()}, lhs, Definitions.type_oo()},
           rhs, Definitions.type_o()}, Definitions.type_o()}
 
-      {:ok, {term, rest2, ctx3}}
+      {:ok, {term, rest2, ctx2, s3}}
     end
   end
 
-  defp parse_formula_op(lhs, tokens, ctx), do: {:ok, {lhs, tokens, ctx}}
+  defp parse_formula_op(lhs, tokens, ctx, subst), do: {:ok, {lhs, tokens, ctx, subst}}
 
-  # Level 2: | (OR), & (AND), ~| (NOR), ~& (NAND)
-
-  defp parse_disjunction(tokens, ctx) do
-    with {:ok, {lhs, rest, ctx2}} <- parse_conjunction(tokens, ctx) do
-      parse_disjunction_op(lhs, rest, ctx2)
+  defp parse_disjunction(tokens, ctx, subst) do
+    with {:ok, {lhs, rest, ctx2, subst2}} <- parse_conjunction(tokens, ctx, subst) do
+      parse_disjunction_op(lhs, rest, ctx2, subst2)
     end
   end
 
-  defp parse_disjunction_op(lhs, [{:or, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_conjunction(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_disjunction_op(lhs, [{:or, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_conjunction(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app,
          {:pre_app, {:pre_const, "|", Definitions.type_ooo()}, lhs, Definitions.type_oo()}, rhs,
          Definitions.type_o()}
 
-      parse_disjunction_op(term, rest2, ctx3)
+      parse_disjunction_op(term, rest2, ctx2, s3)
     end
   end
 
-  defp parse_disjunction_op(lhs, [{:nor, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_conjunction(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_disjunction_op(lhs, [{:nor, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_conjunction(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app, {:pre_const, "~", Definitions.type_oo()},
          {:pre_app,
           {:pre_app, {:pre_const, "|", Definitions.type_ooo()}, lhs, Definitions.type_oo()}, rhs,
           Definitions.type_o()}, Definitions.type_o()}
 
-      parse_disjunction_op(term, rest2, ctx3)
+      parse_disjunction_op(term, rest2, ctx2, s3)
     end
   end
 
-  defp parse_disjunction_op(lhs, tokens, ctx), do: {:ok, {lhs, tokens, ctx}}
+  defp parse_disjunction_op(lhs, tokens, ctx, subst), do: {:ok, {lhs, tokens, ctx, subst}}
 
-  defp parse_conjunction(tokens, ctx) do
-    with {:ok, {lhs, rest, ctx2}} <- parse_unitary(tokens, ctx) do
-      parse_conjunction_op(lhs, rest, ctx2)
+  defp parse_conjunction(tokens, ctx, subst) do
+    with {:ok, {lhs, rest, ctx2, subst2}} <- parse_unitary(tokens, ctx, subst) do
+      parse_conjunction_op(lhs, rest, ctx2, subst2)
     end
   end
 
-  defp parse_conjunction_op(lhs, [{:and, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_unitary(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_conjunction_op(lhs, [{:and, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_unitary(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app,
          {:pre_app, {:pre_const, "&", Definitions.type_ooo()}, lhs, Definitions.type_oo()}, rhs,
          Definitions.type_o()}
 
-      parse_conjunction_op(term, rest2, ctx3)
+      parse_conjunction_op(term, rest2, ctx2, s3)
     end
   end
 
-  defp parse_conjunction_op(lhs, [{:nand, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_unitary(rest, ctx) do
-      ctx3 = ctx2 |> constrain(lhs, Definitions.type_o()) |> constrain(rhs, Definitions.type_o())
-
+  defp parse_conjunction_op(lhs, [{:nand, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_unitary(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(lhs), Definitions.type_o(), s1, off),
+         {:ok, s3} <- unify_at(get_pre_type(rhs), Definitions.type_o(), s2, off) do
       term =
         {:pre_app, {:pre_const, "~", Definitions.type_oo()},
          {:pre_app,
           {:pre_app, {:pre_const, "&", Definitions.type_ooo()}, lhs, Definitions.type_oo()}, rhs,
           Definitions.type_o()}, Definitions.type_o()}
 
-      parse_conjunction_op(term, rest2, ctx3)
+      parse_conjunction_op(term, rest2, ctx2, s3)
     end
   end
 
-  defp parse_conjunction_op(lhs, tokens, ctx), do: {:ok, {lhs, tokens, ctx}}
+  defp parse_conjunction_op(lhs, tokens, ctx, subst), do: {:ok, {lhs, tokens, ctx, subst}}
 
   # Level 3: Unitary (~), Quantifiers (!, ?), Equality (=), Application (@)
 
-  defp parse_unitary([{:not, _} | [{:app, _} | _]] = tokens, ctx), do: parse_equality(tokens, ctx)
+  defp parse_unitary([{:not, _, _} | [{:app, _, _} | _]] = tokens, ctx, subst),
+    do: parse_equality(tokens, ctx, subst)
 
-  defp parse_unitary([{:not, _} | [{:rparen, _} | _]] = tokens, ctx),
-    do: parse_equality(tokens, ctx)
+  defp parse_unitary([{:not, _, _} | [{:rparen, _, _} | _]] = tokens, ctx, subst),
+    do: parse_equality(tokens, ctx, subst)
 
-  defp parse_unitary([{:not, _} | []] = tokens, ctx), do: parse_equality(tokens, ctx)
+  defp parse_unitary([{:not, _, _} | []] = tokens, ctx, subst),
+    do: parse_equality(tokens, ctx, subst)
 
-  defp parse_unitary([{:not, _} | rest], ctx) do
-    with {:ok, {term, rest2, ctx2}} <- parse_unitary(rest, ctx) do
-      ctx3 = constrain(ctx2, term, Definitions.type_o())
-
+  defp parse_unitary([{:not, _, off} | rest], ctx, subst) do
+    with {:ok, {term, rest2, ctx2, s1}} <- parse_unitary(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(term), Definitions.type_o(), s1, off) do
       {:ok,
        {{:pre_app, {:pre_const, "~", Definitions.type_oo()}, term, Definitions.type_o()}, rest2,
-        ctx3}}
+        ctx2, s2}}
     end
   end
 
-  defp parse_unitary([{:forall, _} | rest], ctx), do: parse_quantifier(:pi, rest, ctx)
-  defp parse_unitary([{:exists, _} | rest], ctx), do: parse_quantifier(:sigma, rest, ctx)
-  defp parse_unitary([{:lambda, _} | rest], ctx), do: parse_lambda(rest, ctx)
-  defp parse_unitary([{:pi, _} | [_ | _] = rest], ctx), do: parse_quantifier(:pi, rest, ctx)
-  defp parse_unitary([{:sigma, _} | [_ | _] = rest], ctx), do: parse_quantifier(:sigma, rest, ctx)
-  defp parse_unitary(tokens, ctx), do: parse_equality(tokens, ctx)
+  defp parse_unitary([{:forall, _, _} | rest], ctx, subst),
+    do: parse_quantifier(:pi, rest, ctx, subst)
 
-  defp parse_equality(tokens, ctx) do
-    case parse_application(tokens, ctx) do
-      {:ok, {lhs, [{:eq, _} | rest], ctx2}} ->
-        with {:ok, {rhs, rest2, ctx3}} <- parse_application(rest, ctx2) do
+  defp parse_unitary([{:exists, _, _} | rest], ctx, subst),
+    do: parse_quantifier(:sigma, rest, ctx, subst)
+
+  defp parse_unitary([{:lambda, _, _} | rest], ctx, subst), do: parse_lambda(rest, ctx, subst)
+
+  defp parse_unitary([{:pi, _, _} | [_ | _] = rest], ctx, subst),
+    do: parse_quantifier(:pi, rest, ctx, subst)
+
+  defp parse_unitary([{:sigma, _, _} | [_ | _] = rest], ctx, subst),
+    do: parse_quantifier(:sigma, rest, ctx, subst)
+
+  defp parse_unitary(tokens, ctx, subst), do: parse_equality(tokens, ctx, subst)
+
+  defp parse_equality(tokens, ctx, subst) do
+    case parse_application(tokens, ctx, subst) do
+      {:ok, {lhs, [{:eq, _, off} | rest], ctx2, subst2}} ->
+        with {:ok, {rhs, rest2, ctx3, s1}} <- parse_application(rest, ctx2, subst2),
+             {:ok, s2} <- unify_at(get_pre_type(lhs), get_pre_type(rhs), s1, off) do
           lhs_type = get_pre_type(lhs)
-          rhs_type = get_pre_type(rhs)
-          ctx4 = Context.add_constraint(ctx3, lhs_type, rhs_type)
           eq_type = Type.new(:o, [lhs_type, lhs_type])
 
           term =
             {:pre_app, {:pre_app, {:pre_const, "=", eq_type}, lhs, Type.new(:o, [lhs_type])}, rhs,
              Definitions.type_o()}
 
-          {:ok, {term, rest2, ctx4}}
+          {:ok, {term, rest2, ctx3, s2}}
         end
 
-      {:ok, {lhs, [{:neq, _} | rest], ctx2}} ->
-        with {:ok, {rhs, rest2, ctx3}} <- parse_application(rest, ctx2) do
+      {:ok, {lhs, [{:neq, _, off} | rest], ctx2, subst2}} ->
+        with {:ok, {rhs, rest2, ctx3, s1}} <- parse_application(rest, ctx2, subst2),
+             {:ok, s2} <- unify_at(get_pre_type(lhs), get_pre_type(rhs), s1, off) do
           lhs_type = get_pre_type(lhs)
-          rhs_type = get_pre_type(rhs)
-          ctx4 = Context.add_constraint(ctx3, lhs_type, rhs_type)
           eq_type = Type.new(:o, [lhs_type, lhs_type])
 
           term =
@@ -579,52 +818,55 @@ defmodule ShotDs.Parser do
              {:pre_app, {:pre_app, {:pre_const, "=", eq_type}, lhs, Type.new(:o, [lhs_type])},
               rhs, Definitions.type_o()}, Definitions.type_o()}
 
-          {:ok, {term, rest2, ctx4}}
+          {:ok, {term, rest2, ctx3, s2}}
         end
 
-      {:ok, {lhs, rest, ctx2}} ->
-        {:ok, {lhs, rest, ctx2}}
+      {:ok, {lhs, rest, ctx2, subst2}} ->
+        {:ok, {lhs, rest, ctx2, subst2}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp parse_application(tokens, ctx) do
-    with {:ok, {lhs, rest, ctx2}} <- parse_atomic(tokens, ctx) do
-      parse_app_chain(lhs, rest, ctx2)
+  defp parse_application(tokens, ctx, subst) do
+    with {:ok, {lhs, rest, ctx2, subst2}} <- parse_atomic(tokens, ctx, subst) do
+      parse_app_chain(lhs, rest, ctx2, subst2)
     end
   end
 
-  defp parse_app_chain(lhs, [{:app, _} | rest], ctx) do
-    with {:ok, {rhs, rest2, ctx2}} <- parse_atomic(rest, ctx) do
+  defp parse_app_chain(lhs, [{:app, _, off} | rest], ctx, subst) do
+    with {:ok, {rhs, rest2, ctx2, s1}} <- parse_atomic(rest, ctx, subst) do
       t_f = get_pre_type(lhs)
       t_x = get_pre_type(rhs)
       t_ret = Type.fresh_type_var()
       arrow_type = Type.new(t_ret, [t_x])
-      ctx3 = Context.add_constraint(ctx2, t_f, arrow_type)
-      term = {:pre_app, lhs, rhs, t_ret}
-      parse_app_chain(term, rest2, ctx3)
+
+      with {:ok, s2} <- unify_at(t_f, arrow_type, s1, off) do
+        term = {:pre_app, lhs, rhs, t_ret}
+        parse_app_chain(term, rest2, ctx2, s2)
+      end
     end
   end
 
-  defp parse_app_chain(lhs, tokens, ctx), do: {:ok, {lhs, tokens, ctx}}
+  defp parse_app_chain(lhs, tokens, ctx, subst), do: {:ok, {lhs, tokens, ctx, subst}}
 
-  defp parse_quantifier(type_key, [{:lbracket, _} | rest], ctx) do
-    with {:ok, {vars, [{:rbracket, _}, {:colon, _} | body_tokens]}} <-
+  # Quantifiers and lambda. Lambda-bound variables are added to the inner
+  # context only — the outer context is preserved so the lambda's binders
+  # don't leak. The substitution, by contrast, is global and threads
+  # through.
+  defp parse_quantifier(type_key, [{:lbracket, _, off} | rest], ctx, subst) do
+    with {:ok, {vars, [{:rbracket, _, _}, {:colon, _, _} | body_tokens]}} <-
            parse_typed_vars_with_inference(rest),
          inner_ctx =
            Enum.reduce(vars, ctx, fn {name, type}, acc -> Context.put_var(acc, name, type) end),
-         {:ok, {body_pre_term, rest_tokens, body_ctx}} <-
+         {:ok, {body_pre_term, rest_tokens, _body_ctx, subst2}} <-
            (case body_tokens do
-              [{:lparen, _} | _] -> parse_atomic(body_tokens, inner_ctx)
-              _ -> parse_formula(body_tokens, inner_ctx)
-            end) do
-      final_ctx =
-        Context.add_constraint(body_ctx, get_pre_type(body_pre_term), Definitions.type_o())
-
-      outer_ctx = %{ctx | constraints: final_ctx.constraints}
-
+              [{:lparen, _, _} | _] -> parse_atomic(body_tokens, inner_ctx, subst)
+              _ -> parse_formula(body_tokens, inner_ctx, subst)
+            end),
+         {:ok, subst3} <-
+           unify_at(get_pre_type(body_pre_term), Definitions.type_o(), subst2, off) do
       quant_name = if type_key == :pi, do: "Π", else: "Σ"
 
       term =
@@ -636,7 +878,9 @@ defmodule ShotDs.Parser do
           {:pre_app, quant_const, abs_node, Definitions.type_o()}
         end)
 
-      {:ok, {term, rest_tokens, outer_ctx}}
+      # Drop the inner_ctx — outer context is unchanged. Substitution is
+      # propagated.
+      {:ok, {term, rest_tokens, ctx, subst3}}
     else
       {:ok, {_, remaining}} ->
         {:error, "Syntax Error: Expected closing bracket and colon, found: #{inspect(remaining)}"}
@@ -646,22 +890,24 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_quantifier(type_key, [{:lparen, _}, {:lambda, _} | rest], ctx) do
-    case parse_lambda(rest, ctx) do
-      {:ok, {abs_term, [{:rparen, _} | final_tokens], lambda_ctx}} ->
+  defp parse_quantifier(type_key, [{:lparen, _, off}, {:lambda, _, _} | rest], ctx, subst) do
+    case parse_lambda(rest, ctx, subst) do
+      {:ok, {abs_term, [{:rparen, _, _} | final_tokens], _lambda_ctx, subst2}} ->
         abs_type = get_pre_type(abs_term)
         element_type = Type.fresh_type_var()
         expected_pred_type = Type.new(:o, [element_type])
-        final_ctx = Context.add_constraint(lambda_ctx, abs_type, expected_pred_type)
         quant_name = if type_key == :pi, do: "Π", else: "Σ"
-        quant_const = {:pre_const, quant_name, Type.new(:o, [expected_pred_type])}
-        term = {:pre_app, quant_const, abs_term, Definitions.type_o()}
-        {:ok, {term, final_tokens, final_ctx}}
 
-      {:ok, {_, [{type, val} | _], _}} ->
+        with {:ok, subst3} <- unify_at(abs_type, expected_pred_type, subst2, off) do
+          quant_const = {:pre_const, quant_name, Type.new(:o, [expected_pred_type])}
+          term = {:pre_app, quant_const, abs_term, Definitions.type_o()}
+          {:ok, {term, final_tokens, ctx, subst3}}
+        end
+
+      {:ok, {_, [{type, val, _} | _], _, _}} ->
         {:error, "Syntax Error: Expected ')', found '#{val}' (#{inspect(type)})."}
 
-      {:ok, {_, [], _}} ->
+      {:ok, {_, [], _, _}} ->
         {:error, "Syntax Error: Unexpected end of input."}
 
       {:error, reason} ->
@@ -669,30 +915,30 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_quantifier(type_key, rest, ctx) do
-    with {:ok, {term, rest2, ctx2}} <- parse_unitary(rest, ctx) do
-      term_type = get_pre_type(term)
-      alpha = Type.fresh_type_var()
-      expected_pred_type = Type.new(:o, [alpha])
-      ctx3 = Context.add_constraint(ctx2, term_type, expected_pred_type)
+  defp parse_quantifier(type_key, rest, ctx, subst) do
+    off = peek_offset(rest)
+
+    with {:ok, {term, rest2, ctx2, subst2}} <- parse_unitary(rest, ctx, subst),
+         term_type = get_pre_type(term),
+         alpha = Type.fresh_type_var(),
+         expected_pred_type = Type.new(:o, [alpha]),
+         {:ok, subst3} <- unify_at(term_type, expected_pred_type, subst2, off) do
       quant_name = if type_key == :pi, do: "Π", else: "Σ"
       quant_const_type = Type.new(:o, [expected_pred_type])
       quant_const = {:pre_const, quant_name, quant_const_type}
-      {:ok, {{:pre_app, quant_const, term, Definitions.type_o()}, rest2, ctx3}}
+      {:ok, {{:pre_app, quant_const, term, Definitions.type_o()}, rest2, ctx2, subst3}}
     end
   end
 
-  defp parse_lambda([{:lbracket, _} | rest], ctx) do
+  defp parse_lambda([{:lbracket, _, _} | rest], ctx, subst) do
     with {:ok, {vars, rest_after_vars}} <- parse_typed_vars_with_inference(rest),
          inner_ctx = Enum.reduce(vars, ctx, fn {n, t}, c -> Context.put_var(c, n, t) end),
-         [{:rbracket, _}, {:colon, _} | body_tokens] <- rest_after_vars,
-         {:ok, {body_pre_term, rest_tokens, body_ctx}} <-
+         [{:rbracket, _, _}, {:colon, _, _} | body_tokens] <- rest_after_vars,
+         {:ok, {body_pre_term, rest_tokens, _body_ctx, subst2}} <-
            (case body_tokens do
-              [{:lparen, _} | _] -> parse_atomic(body_tokens, inner_ctx)
-              _ -> parse_formula(body_tokens, inner_ctx)
+              [{:lparen, _, _} | _] -> parse_atomic(body_tokens, inner_ctx, subst)
+              _ -> parse_formula(body_tokens, inner_ctx, subst)
             end) do
-      final_ctx = %{ctx | constraints: body_ctx.constraints}
-
       term =
         Enum.reverse(vars)
         |> Enum.reduce(body_pre_term, fn {name, type}, acc ->
@@ -701,7 +947,7 @@ defmodule ShotDs.Parser do
           {:pre_abs, name, type, acc, abs_type}
         end)
 
-      {:ok, {term, rest_tokens, final_ctx}}
+      {:ok, {term, rest_tokens, ctx, subst2}}
     else
       unmatched_tokens when is_list(unmatched_tokens) ->
         {:error,
@@ -714,15 +960,15 @@ defmodule ShotDs.Parser do
 
   defp parse_typed_vars_with_inference(tokens, acc \\ []) do
     case tokens do
-      [{:var, name}, {:comma, _} | rest] ->
+      [{:var, name, _}, {:comma, _, _} | rest] ->
         parse_typed_vars_with_inference(rest, acc ++ [{name, Type.fresh_type_var()}])
 
-      [{:var, name}, {:rbracket, _} = rb | rest] ->
+      [{:var, name, _}, {:rbracket, _, _} = rb | rest] ->
         {:ok, {acc ++ [{name, Type.fresh_type_var()}], [rb | rest]}}
 
-      [{:var, name}, {:colon, _} | rest] ->
+      [{:var, name, _}, {:colon, _, _} | rest] ->
         case parse_type_tokens(rest) do
-          {:ok, {type, [{:comma, _} | rest2]}} ->
+          {:ok, {type, [{:comma, _, _} | rest2]}} ->
             new_acc = acc ++ [{name, type}]
             parse_typed_vars_with_inference(rest2, new_acc)
 
@@ -739,13 +985,13 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_atomic([{:lparen, _} | rest], ctx) do
-    with {:ok, {term, rest2, ctx2}} <- parse_formula(rest, ctx) do
+  defp parse_atomic([{:lparen, _, _} | rest], ctx, subst) do
+    with {:ok, {term, rest2, ctx2, subst2}} <- parse_formula(rest, ctx, subst) do
       case rest2 do
-        [{:rparen, _} | final_rest] ->
-          {:ok, {term, final_rest, ctx2}}
+        [{:rparen, _, _} | final_rest] ->
+          {:ok, {term, final_rest, ctx2, subst2}}
 
-        [{type, val} | _] ->
+        [{type, val, _} | _] ->
           {:error, "Syntax Error: Expected ')', found '#{val}' (#{inspect(type)})."}
 
         [] ->
@@ -754,113 +1000,114 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_atomic([{:var, name} | rest], ctx) do
+  defp parse_atomic([{:var, name, _} | rest], ctx, subst) do
     case Context.get_type(ctx, name) do
       nil ->
         new_type = Type.fresh_type_var()
         ctx2 = Context.put_var(ctx, name, new_type)
-        {:ok, {{:pre_var, name, new_type}, rest, ctx2}}
+        {:ok, {{:pre_var, name, new_type}, rest, ctx2, subst}}
 
       type ->
-        {:ok, {{:pre_var, name, type}, rest, ctx}}
+        {:ok, {{:pre_var, name, type}, rest, ctx, subst}}
     end
   end
 
-  defp parse_atomic([{:atom, name} | rest], ctx) do
+  defp parse_atomic([{atom_or_distinct, name, _} | rest], ctx, subst)
+       when atom_or_distinct in [:atom, :distinct] do
     case Context.get_type(ctx, name) do
       nil ->
         new_type = Type.fresh_type_var()
         ctx2 = Context.put_const(ctx, name, new_type)
-        {:ok, {{:pre_const, name, new_type}, rest, ctx2}}
+        {:ok, {{:pre_const, name, new_type}, rest, ctx2, subst}}
 
       type ->
-        {:ok, {{:pre_const, name, type}, rest, ctx}}
+        {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
     end
   end
 
-  defp parse_atomic([{:system, "$true"} | rest], ctx),
-    do: {:ok, {{:pre_const, "$true", Definitions.type_o()}, rest, ctx}}
+  defp parse_atomic([{:system, "$true", _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "$true", Definitions.type_o()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:system, "$false"} | rest], ctx),
-    do: {:ok, {{:pre_const, "$false", Definitions.type_o()}, rest, ctx}}
+  defp parse_atomic([{:system, "$false", _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "$false", Definitions.type_o()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:eq, _} | rest], ctx) do
+  defp parse_atomic([{:eq, _, _} | rest], ctx, subst) do
     alpha = Type.fresh_type_var()
-    {:ok, {{:pre_const, "=", Type.new(:o, [alpha, alpha])}, rest, ctx}}
+    {:ok, {{:pre_const, "=", Type.new(:o, [alpha, alpha])}, rest, ctx, subst}}
   end
 
-  defp parse_atomic([{:neq, _} | rest], ctx) do
+  defp parse_atomic([{:neq, _, _} | rest], ctx, subst) do
     alpha = Type.fresh_type_var()
-    {:ok, {{:pre_const, "!=", Type.new(:o, [alpha, alpha])}, rest, ctx}}
+    {:ok, {{:pre_const, "!=", Type.new(:o, [alpha, alpha])}, rest, ctx, subst}}
   end
 
-  defp parse_atomic([{:equiv, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "<=>", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:equiv, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "<=>", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:implies, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "=>", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:implies, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "=>", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:implied_by, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "<=", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:implied_by, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "<=", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:xor, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "<~>", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:xor, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "<~>", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:nor, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "~|", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:nor, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "~|", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:nand, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "~&", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:nand, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "~&", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:forall, _} | [{:lbracket, _} | _] = rest], ctx),
-    do: parse_quantifier(:pi, rest, ctx)
+  defp parse_atomic([{:forall, _, _} | [{:lbracket, _, _} | _] = rest], ctx, subst),
+    do: parse_quantifier(:pi, rest, ctx, subst)
 
-  defp parse_atomic([{:exists, _} | [{:lbracket, _} | _] = rest], ctx),
-    do: parse_quantifier(:sigma, rest, ctx)
+  defp parse_atomic([{:exists, _, _} | [{:lbracket, _, _} | _] = rest], ctx, subst),
+    do: parse_quantifier(:sigma, rest, ctx, subst)
 
-  defp parse_atomic([{:pi, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
-    do: parse_quantifier(:pi, rest, ctx)
+  defp parse_atomic([{:pi, _, _} | [{:lparen, _, _}, {:lambda, _, _} | _] = rest], ctx, subst),
+    do: parse_quantifier(:pi, rest, ctx, subst)
 
-  defp parse_atomic([{:sigma, _} | [{:lparen, _}, {:lambda, _} | _] = rest], ctx),
-    do: parse_quantifier(:sigma, rest, ctx)
+  defp parse_atomic([{:sigma, _, _} | [{:lparen, _, _}, {:lambda, _, _} | _] = rest], ctx, subst),
+    do: parse_quantifier(:sigma, rest, ctx, subst)
 
-  defp parse_atomic([{:pi, _} | rest], ctx) do
+  defp parse_atomic([{:pi, _, _} | rest], ctx, subst) do
     type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Π", type}, rest, ctx}}
+    {:ok, {{:pre_const, "Π", type}, rest, ctx, subst}}
   end
 
-  defp parse_atomic([{:forall, _} | rest], ctx) do
+  defp parse_atomic([{:forall, _, _} | rest], ctx, subst) do
     type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Π", type}, rest, ctx}}
+    {:ok, {{:pre_const, "Π", type}, rest, ctx, subst}}
   end
 
-  defp parse_atomic([{:sigma, _} | rest], ctx) do
+  defp parse_atomic([{:sigma, _, _} | rest], ctx, subst) do
     type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Σ", type}, rest, ctx}}
+    {:ok, {{:pre_const, "Σ", type}, rest, ctx, subst}}
   end
 
-  defp parse_atomic([{:exists, _} | rest], ctx) do
+  defp parse_atomic([{:exists, _, _} | rest], ctx, subst) do
     type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Σ", type}, rest, ctx}}
+    {:ok, {{:pre_const, "Σ", type}, rest, ctx, subst}}
   end
 
-  defp parse_atomic([{:lambda, _} | rest], ctx), do: parse_lambda(rest, ctx)
+  defp parse_atomic([{:lambda, _, _} | rest], ctx, subst), do: parse_lambda(rest, ctx, subst)
 
-  defp parse_atomic([{:not, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "~", Definitions.type_oo()}, rest, ctx}}
+  defp parse_atomic([{:not, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "~", Definitions.type_oo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:or, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "|", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:or, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "|", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([{:and, _} | rest], ctx),
-    do: {:ok, {{:pre_const, "&", Definitions.type_ooo()}, rest, ctx}}
+  defp parse_atomic([{:and, _, _} | rest], ctx, subst),
+    do: {:ok, {{:pre_const, "&", Definitions.type_ooo()}, rest, ctx, subst}}
 
-  defp parse_atomic([token | _rest], _ctx) do
-    {type, value} = token
+  defp parse_atomic([token | _rest], _ctx, _subst) do
+    {type, value, _offset} = token
     {:error, "Syntax Error: Expected atomic term, but found token '#{value}' (#{inspect(type)})."}
   end
 
-  defp parse_atomic([], _ctx) do
+  defp parse_atomic([], _ctx, _subst) do
     {:error, "Syntax Error: Unexpected end of input."}
   end
 end

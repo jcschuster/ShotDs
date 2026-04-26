@@ -21,7 +21,7 @@ defmodule ShotDs.ParserTest do
       |> Context.put_const("f", Type.new(:o, :i))
       |> Context.put_var("X", Type.new(:i))
 
-    term_id = Parser.parse("f @ X", ctx) |> ok!()
+    term_id = Parser.parse("f @ X", ctx: ctx) |> ok!()
 
     assert %Term{head: %Declaration{kind: :co, name: "f"}, type: %Type{goal: :o}} =
              term!(term_id)
@@ -58,7 +58,7 @@ defmodule ShotDs.ParserTest do
   end
 
   test "parse_tokens/2 returns an error for invalid starts" do
-    assert {:error, message} = Parser.parse_tokens([{:rparen, ")"}], Context.new())
+    assert {:error, message} = Parser.parse_tokens([{:rparen, ")", 0}])
     assert message =~ "Syntax Error"
   end
 
@@ -68,7 +68,7 @@ defmodule ShotDs.ParserTest do
       |> Context.put_const("f", Type.new(:o, :i))
       |> Context.put_const("p", Type.new(:o))
 
-    assert {:error, message} = Parser.parse("f @ p", ctx)
+    assert {:error, message} = Parser.parse("f @ p", ctx: ctx)
     assert message =~ "Type Error"
   end
 
@@ -104,23 +104,13 @@ defmodule ShotDs.ParserTest do
   end
 
   test "parse/1 handles equality and inequality" do
-    eq_parsed =
-      Parser.parse(
-        "a = b",
-        Context.new()
-        |> Context.put_const("a", Type.new(:i))
-        |> Context.put_const("b", Type.new(:i))
-      )
-      |> ok!()
+    ctx =
+      Context.new()
+      |> Context.put_const("a", Type.new(:i))
+      |> Context.put_const("b", Type.new(:i))
 
-    neq_parsed =
-      Parser.parse(
-        "a != b",
-        Context.new()
-        |> Context.put_const("a", Type.new(:i))
-        |> Context.put_const("b", Type.new(:i))
-      )
-      |> ok!()
+    eq_parsed = Parser.parse("a = b", ctx: ctx) |> ok!()
+    neq_parsed = Parser.parse("a != b", ctx: ctx) |> ok!()
 
     assert %Term{head: %Declaration{name: "="}} = term!(eq_parsed)
     assert %Term{head: %Declaration{name: "¬"}} = term!(neq_parsed)
@@ -160,7 +150,7 @@ defmodule ShotDs.ParserTest do
 
   test "parse/1 handles complex lambda expressions" do
     ctx = Context.new() |> Context.put_const("a", Type.new(:i))
-    lambda = Parser.parse("^ [X:$i, Y:$i]: a", ctx) |> ok!()
+    lambda = Parser.parse("^ [X:$i, Y:$i]: a", ctx: ctx) |> ok!()
 
     assert %Term{bvars: [_, _]} = term!(lambda)
   end
@@ -184,7 +174,7 @@ defmodule ShotDs.ParserTest do
       |> Context.put_const("a", Type.new(:i))
       |> Context.put_const("b", Type.new(:i))
 
-    term_id = Parser.parse("f @ a @ b", ctx) |> ok!()
+    term_id = Parser.parse("f @ a @ b", ctx: ctx) |> ok!()
 
     assert %Term{type: %Type{goal: :i}} = term!(term_id)
   end

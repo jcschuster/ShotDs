@@ -1,6 +1,6 @@
 defmodule ShotDs.Data.Type do
   @moduledoc """
-  Provides a data structure for Church's simple types.
+  Provides a data structure for Church's simple types (monotypes).
 
   ## Examples
 
@@ -24,13 +24,16 @@ defmodule ShotDs.Data.Type do
   @enforce_keys [:goal]
   defstruct [:goal, args: []]
 
+  @type concrete_id() :: atom()
+  @type variable_id() :: reference()
+
   @typedoc """
   The type of a basic type.
 
   A basic type is identified as an atom (concrete type) or a reference (type
   variable).
   """
-  @type type_id() :: atom() | reference()
+  @type type_id() :: concrete_id() | variable_id()
 
   @typedoc """
   The type of a simple type.
@@ -71,6 +74,17 @@ defmodule ShotDs.Data.Type do
   def type_var?(%__MODULE__{goal: g, args: []}) when is_reference(g), do: true
   def type_var?(type) when is_reference(type), do: true
   def type_var?(_), do: false
+
+  @doc """
+  Returns the set of type variable references appearing anywhere in the given
+  type. Used by the type inference engine for generalization.
+  """
+  @spec free_type_vars(t()) :: MapSet.t(variable_id())
+  def free_type_vars(%__MODULE__{goal: g, args: args}) do
+    base = if is_reference(g), do: MapSet.new([g]), else: MapSet.new()
+
+    Enum.reduce(args, base, &MapSet.union(&2, free_type_vars(&1)))
+  end
 
   defp normalize_args(args) do
     args

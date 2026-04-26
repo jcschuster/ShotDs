@@ -1,7 +1,10 @@
 defmodule ShotDs.Util.TypeInference do
   @moduledoc false
-  # Contains functionality for type inference given a set of type constraints.
-  # Utilizes Robinson's unification algorithm for type unification.
+  # Robinson first-order unification for the rank-1 HM type system.
+  # Used by the parser in W-style: each application/connective node calls
+  # unify/3 immediately during the AST traversal, threading the running
+  # substitution. The legacy constraint-set entry points (solve/solve!) are
+  # kept as deprecated wrappers.
 
   alias ShotDs.Data.Type
 
@@ -10,7 +13,12 @@ defmodule ShotDs.Util.TypeInference do
   """
   @type type_substitution :: %{reference() => Type.t() | atom() | reference()}
 
-  @typep general_type() :: Type.t() | reference() | atom()
+  @typedoc """
+  A type-shaped value accepted by `unify/3` and `apply_subst/2`: a full
+  `Type.t()` struct, a bare reference (type variable), or an atom (concrete
+  base type).
+  """
+  @type general_type() :: Type.t() | reference() | atom()
 
   defmodule TypeError do
     @moduledoc """
@@ -20,27 +28,29 @@ defmodule ShotDs.Util.TypeInference do
   end
 
   @doc """
-  Safely tries to solve a list of type constraints by unification.
-  Returns `{:ok, substitution}` or `{:error, reason}`.
+  Unifies two types under the given substitution. Returns either an updated
+  substitution that reconciles `t1` with `t2`, or an error.
+
+  Both arguments are first resolved through the current substitution, so
+  callers do not need to pre-apply themselves. Standard Robinson first-order
+  unification with occurs check.
+
+  This is the W-style entry point: the parser calls `unify/3` directly during
+  AST traversal rather than collecting deferred constraints.
   """
-  @spec solve([{Type.t(), Type.t()}]) :: {:ok, type_substitution()} | {:error, String.t()}
-  def solve(constraints) do
-    Enum.reduce_while(constraints, {:ok, %{}}, fn {t1, t2}, {:ok, subst} ->
-      case unify(apply_subst(t1, subst), apply_subst(t2, subst), subst) do
-        {:ok, new_subst} -> {:cont, {:ok, new_subst}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
+  @spec unify(general_type(), general_type(), type_substitution()) ::
+          {:ok, type_substitution()} | {:error, String.t()}
+  def unify(t1, t2, subst) do
+    do_unify(apply_subst(t1, subst), apply_subst(t2, subst), subst)
   end
 
   @doc """
-  Tries to solve a list of type constraints by unification, raising a
-  `ShotDs.Util.TypeInference.TypeError` on failure.
+  Unifies two types, raising a `TypeError` on failure.
   """
-  @spec solve!([{Type.t(), Type.t()}]) :: type_substitution()
-  def solve!(constraints) do
-    case solve(constraints) do
-      {:ok, subst} -> subst
+  @spec unify!(general_type(), general_type(), type_substitution()) :: type_substitution()
+  def unify!(t1, t2, subst) do
+    case unify(t1, t2, subst) do
+      {:ok, new_subst} -> new_subst
       {:error, reason} -> raise TypeError, message: reason
     end
   end
@@ -68,12 +78,15 @@ defmodule ShotDs.Util.TypeInference do
   def apply_subst(other, _subst), do: other
 
   #############################################################################
-  # UNIFICATION LOGIC
+  # UNIFICATION LOGIC (internal)
   #############################################################################
+  # The do_unify family assumes its inputs have already had the current
+  # substitution applied. The public `unify/3` is responsible for that
+  # apply_subst step.
 
-  @spec unify(general_type(), general_type(), type_substitution()) ::
+  @spec do_unify(general_type(), general_type(), type_substitution()) ::
           {:ok, type_substitution()} | {:error, String.t()}
-  defp unify(%Type{goal: g1, args: a1} = t1, %Type{goal: g2, args: a2} = t2, subst) do
+  defp do_unify(%Type{goal: g1, args: a1} = t1, %Type{goal: g2, args: a2} = t2, subst) do
     len1 = length(a1)
     len2 = length(a2)
 
@@ -93,9 +106,9 @@ defmodule ShotDs.Util.TypeInference do
   end
 
   # Fallbacks for raw variables/atoms directly
-  defp unify(ref, %Type{} = t, subst) when is_reference(ref), do: bind(ref, t, subst)
-  defp unify(%Type{} = t, ref, subst) when is_reference(ref), do: bind(ref, t, subst)
-  defp unify(t1, t2, subst), do: unify_terms(t1, t2, subst)
+  defp do_unify(ref, %Type{} = t, subst) when is_reference(ref), do: bind(ref, t, subst)
+  defp do_unify(%Type{} = t, ref, subst) when is_reference(ref), do: bind(ref, t, subst)
+  defp do_unify(t1, t2, subst), do: unify_terms(t1, t2, subst)
 
   # Helper for unifying bases (atoms or references)
   defp unify_terms(t, t, subst), do: {:ok, subst}
@@ -118,7 +131,7 @@ defmodule ShotDs.Util.TypeInference do
     do: {:error, "Type Error: Cannot unify concrete goals #{g1} and #{g2}."}
 
   defp reducer({arg1, arg2}, {:ok, acc_subst}) do
-    case unify(apply_subst(arg1, acc_subst), apply_subst(arg2, acc_subst), acc_subst) do
+    case do_unify(apply_subst(arg1, acc_subst), apply_subst(arg2, acc_subst), acc_subst) do
       {:ok, new_subst} -> {:cont, {:ok, new_subst}}
       {:error, _} = err -> {:halt, err}
     end
@@ -131,7 +144,7 @@ defmodule ShotDs.Util.TypeInference do
     subst_after_args_result =
       Enum.zip(a_short, shared_a_long)
       |> Enum.reduce_while({:ok, subst}, fn {a1, a2}, {:ok, acc} ->
-        case unify(apply_subst(a1, acc), apply_subst(a2, acc), acc) do
+        case do_unify(apply_subst(a1, acc), apply_subst(a2, acc), acc) do
           {:ok, new_acc} -> {:cont, {:ok, new_acc}}
           {:error, _} = err -> {:halt, err}
         end
@@ -141,7 +154,7 @@ defmodule ShotDs.Util.TypeInference do
       {:ok, subst_after_args} ->
         tail_type = Type.new(g_long, extra_a_long)
 
-        unify(
+        do_unify(
           apply_subst(g_short, subst_after_args),
           apply_subst(tail_type, subst_after_args),
           subst_after_args

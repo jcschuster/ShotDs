@@ -4,7 +4,7 @@ defmodule ShotDs do
   include parsing functions as well as simple term construction.
   """
 
-  alias ShotDs.Data.{Context, Declaration, Problem, Substitution, Term, Type}
+  alias ShotDs.Data.{Declaration, Problem, Substitution, Term, Type}
   alias ShotDs.Stt.TermFactory, as: TF
   alias ShotDs.Parser
   alias ShotDs.Tptp
@@ -29,26 +29,6 @@ defmodule ShotDs do
   """
   @spec parse!(String.t()) :: Term.term_id()
   defdelegate parse!(formula_str), to: Parser
-
-  @doc """
-  Parses a given string representing a formula in TH0 syntax with full type
-  inference. Types which can't be inferred are assigned type variables.
-  Variables on the outermost level are identified with type o. Returns the
-  assigned ID of the created term. The given `ShotDs.Data.Context` struct
-  defines a type environment for resolving unknown types.
-
-  Delegates the function call to `ShotDs.Parser.parse!/2`.
-
-  ## Example:
-
-      iex> alias ShotDs.Data.Context
-      iex> import ShotDs.Hol.Definitions
-      iex> ctx = Context.new() |> Context.put_var("X", type_ii()) |> Context.put_var("Y", type_i())
-      iex> parse!("X @ Y", ctx) |> format_term()
-      "(X_i>i Y_i)_i""
-  """
-  @spec parse!(String.t(), Context.t()) :: Term.term_id()
-  defdelegate parse!(formula_str, context), to: Parser
 
   @doc """
   Parses a HOL type from TPTP syntax into a `ShotDs.Data.Type` struct.

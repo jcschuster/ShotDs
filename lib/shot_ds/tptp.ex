@@ -106,8 +106,6 @@ defmodule ShotDs.Tptp do
     end
   end
 
-  # --- Path Resolution Helpers ---
-
   defp resolve_path(problem, :tptp_problem) do
     case System.fetch_env("TPTP_ROOT") do
       :error ->
@@ -157,17 +155,15 @@ defmodule ShotDs.Tptp do
 
   defp resolve_path!(problem, :custom), do: problem
 
-  # --- Token Processing ---
-
   defp process_tokens([], problem), do: {:ok, problem}
 
   defp process_tokens(
          [
-           {:keyword, :include},
-           {:lparen, _},
-           {:distinct, raw_file_path},
-           {:rparen, _},
-           {:dot, _} | rest
+           {:keyword, :include, _},
+           {:lparen, _, _},
+           {:distinct, raw_file_path, _},
+           {:rparen, _, _},
+           {:dot, _, _} | rest
          ],
          problem
        ) do
@@ -190,22 +186,23 @@ defmodule ShotDs.Tptp do
 
   defp process_tokens(
          [
-           {:keyword, :thf},
-           {:lparen, _},
-           {:atom, name},
-           {:comma, _},
-           {:role, role},
-           {:comma, _} | rest
+           {:keyword, :thf, _},
+           {:lparen, _, _},
+           {atom_or_distinct, name, _},
+           {:comma, _, _},
+           {:role, role, _},
+           {:comma, _, _} | rest
          ],
          problem
-       ) do
+       )
+       when atom_or_distinct in [:atom, :distinct] do
     with {:ok, formula_tokens, remaining_tokens} <- extract_formula(rest),
          {:ok, new_problem} <- handle_thf_role(role, name, formula_tokens, problem) do
       process_tokens(remaining_tokens, new_problem)
     end
   end
 
-  defp process_tokens([{token_type, value} | _], _problem) do
+  defp process_tokens([{token_type, value, _offset} | _], _problem) do
     {:error, "Unexpected token: '#{value}' (#{inspect(token_type)})"}
   end
 
@@ -218,7 +215,7 @@ defmodule ShotDs.Tptp do
   defp handle_thf_role(role, name, formula_tokens, problem) do
     ctx = build_context(problem)
 
-    with {:ok, term_id} <- Parser.parse_tokens(formula_tokens, ctx),
+    with {:ok, term_id} <- Parser.parse_tokens(formula_tokens, ctx: ctx),
          {:ok, new_problem} <- update_problem_statements(problem, role, name, term_id) do
       {:ok, new_problem}
     else
@@ -253,21 +250,19 @@ defmodule ShotDs.Tptp do
 
   defp update_problem_statements(problem, _role, _name, _term_id), do: {:ok, problem}
 
-  # --- Formula Extraction ---
-
   defp extract_formula(tokens), do: split_at_entry_end(tokens, 0, [])
 
-  defp split_at_entry_end([{:rparen, _}, {:dot, _} | rest], 0, acc),
+  defp split_at_entry_end([{:rparen, _, _}, {:dot, _, _} | rest], 0, acc),
     do: {:ok, Enum.reverse(acc), rest}
 
   defp split_at_entry_end([], _depth, _acc) do
     {:error, "Unexpected end of file. Missing ' thf( ... ). ' closing sequence."}
   end
 
-  defp split_at_entry_end([{:lparen, _} = t | rest], depth, acc),
+  defp split_at_entry_end([{:lparen, _, _} = t | rest], depth, acc),
     do: split_at_entry_end(rest, depth + 1, [t | acc])
 
-  defp split_at_entry_end([{:rparen, _} = t | rest], depth, acc),
+  defp split_at_entry_end([{:rparen, _, _} = t | rest], depth, acc),
     do: split_at_entry_end(rest, depth - 1, [t | acc])
 
   defp split_at_entry_end([t | rest], depth, acc),
@@ -275,12 +270,13 @@ defmodule ShotDs.Tptp do
 
   # --- Type & Context Helpers ---
 
-  defp parse_type_decl([{:atom, name}, {:colon, _} | type_tokens]) do
-    if type_tokens == [{:system, "$tType"}] do
+  defp parse_type_decl([{atom_or_distinct, name, _}, {:colon, _, _} | type_tokens])
+       when atom_or_distinct in [:atom, :distinct] do
+    if match?([{:system, "$tType", _}], type_tokens) do
       {:ok, {name, :base_type}}
     else
-      case Parser.parse_type_tokens(type_tokens) do
-        {:ok, {type_struct, []}} -> {:ok, {name, type_struct}}
+      case Parser.parse_type_scheme_tokens(type_tokens) do
+        {:ok, {scheme, []}} -> {:ok, {name, scheme}}
         {:ok, {_, unparsed}} -> {:error, "Could not parse #{inspect(unparsed)} to type."}
         {:error, reason} -> {:error, reason}
       end

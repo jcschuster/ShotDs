@@ -35,20 +35,39 @@ defmodule ShotDs.Hol.Sigils do
   def sigil_t(string, []), do: Parser.parse_type!(string)
 
   @doc """
-  Handles the `~f` sigil for parsing TH0 formulas.
+  Handles the `~f` sigil for parsing THF formulas. If the term's type is
+  polymorphic, instantiates this outer polytype with type o.
 
   Returns the assigned global or local term ID. Raises a
   `ShotDs.Parser.ParseError` if the syntax is invalid.
 
   ## Example:
 
-      iex> ~f(P => P | Q) |> ShotDs.Util.Formatter.format()
-      {:ok, "P ⊃ (P ∨ Q)"}
+      iex> ~f<P @ X> |> ShotDs.Util.Formatter.format!(false)
+      "(P_T[XRRVQ]>o X_T[XRRVQ])_o"
   """
   @spec sigil_f(String.t(), [char()]) :: Term.term_id()
   def sigil_f(string, []) do
     ctx = Process.get(:hol_context) || Context.new()
-    Parser.parse!(string, ctx)
+    Parser.parse!(string, force_o: true, ctx: ctx)
+  end
+
+  @doc """
+  Handles the `~g` sigil for parsing THF formulas. Keeps outer type variables
+  polymorphic.
+
+  Returns the assigned global or local term ID. Raises a
+  `ShotDs.Parser.ParseError` if the syntax is invalid.
+
+  ## Example:
+
+      iex> ~g<P @ X> |> ShotDs.Util.Formatter.format!(false)
+      "(P_T[201F47]>T[1XMEC7] X_T[201F47])_T[1XMEC7]"
+  """
+  @spec sigil_g(String.t(), [char()]) :: Term.term_id()
+  def sigil_g(string, []) do
+    ctx = Process.get(:hol_context) || Context.new()
+    Parser.parse!(string, ctx: ctx)
   end
 
   @doc ~S'''
@@ -72,7 +91,10 @@ defmodule ShotDs.Hol.Sigils do
   @doc """
   Handles the `~e` sigil for parsing type environment (context).
 
-  Returns a `ShotDs.Data.Context` struct, raising on errors.
+  Returns a `ShotDs.Data.Context` struct, raising on errors. Constants are
+  stored as type schemes (see `ShotDs.Data.TypeScheme`); a bare monotype
+  declaration like `p: $i>$o` is recorded as a trivial scheme with no quantified
+  variables.
 
   ## Example:
 
@@ -80,18 +102,20 @@ defmodule ShotDs.Hol.Sigils do
       %ShotDs.Data.Context{
         vars: %{"X" => %ShotDs.Data.Type{goal: :i, args: []}},
         consts: %{
-          "p" => %ShotDs.Data.Type{
-            goal: :o,
-            args: [%ShotDs.Data.Type{goal: :i, args: []}]
+          "p" => %ShotDs.Data.TypeScheme{
+            body: %ShotDs.Data.Type{
+              goal: :o,
+              args: [%ShotDs.Data.Type{goal: :i, args: []}]
+            },
+            vars: []
           }
-        },
-        constraints: MapSet.new([])
+        }
       }
   """
   def sigil_e(string, []), do: Parser.parse_context!(string)
 
   @doc """
-  Provides a wrapper for the `~f` sigil to consider some type environment.
+  Provides a wrapper for parsing to consider some type environment.
 
   ## Example:
 

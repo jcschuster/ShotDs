@@ -1,23 +1,15 @@
 defmodule ShotDsTest do
   use ShotDs.TermFactoryCase
 
-  alias ShotDs.Data.Context
   alias ShotDs.Parser
   alias ShotDs.Tptp
-  alias ShotDs.Util.{Formatter}
+  alias ShotDs.Util.Formatter
   import ShotDs.Hol.Dsl
 
-  test "parse! delegates to Parser.parse! for arities 1 and 2" do
+  test "parse! delegates to Parser.parse!" do
     formula = "$true => $false"
 
     assert ShotDs.parse!(formula) == Parser.parse!(formula)
-
-    ctx =
-      Context.new()
-      |> Context.put_const("f", Type.new(:o, :i))
-      |> Context.put_var("X", Type.new(:i))
-
-    assert ShotDs.parse!("f @ X", ctx) == Parser.parse!("f @ X", ctx)
   end
 
   test "parse_type!/1 delegates to Parser.parse_type!/1" do

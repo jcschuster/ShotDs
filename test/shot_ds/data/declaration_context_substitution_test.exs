@@ -38,20 +38,16 @@ defmodule ShotDs.Data.DeclarationContextSubstitutionTest do
     assert to_string(decl) == "X"
   end
 
-  test "context stores vars, consts and constraints" do
+  test "context stores vars and consts" do
     i = Type.new(:i)
-    o = Type.new(:o)
 
     ctx =
       Context.new()
       |> Context.put_var("X", i)
       |> Context.put_const("p", Type.new(:o, :i))
-      |> Context.add_constraint(i, o)
-      |> Context.add_constraint(i, o)
 
     assert Context.get_type(ctx, "X") == i
     assert Context.get_type(ctx, "p") == Type.new(:o, :i)
-    assert MapSet.size(ctx.constraints) == 1
   end
 
   test "context get_type/2 supports reference names" do

@@ -3,25 +3,31 @@ defmodule ShotDs.Data.Context do
   Represents a type environment for parsing and type checking. Can also be
   created by using the `~e` sigil from `ShotDs.Hol.Sigils`.
 
+  Constants are stored as `ShotDs.Data.TypeScheme`, enabling rank-1
+  polymorphism: each lookup of a constant via `get_type/2` produces a fresh
+  instantiation of its scheme. Constants declared with a bare monotype are
+  wrapped in a trivial scheme and behave identically to a monomorphic
+  declaration.
+
+  Term variables are always stored as monotypes as Hindley-Milner only enables
+  generalization in let-bindings, not in lambda-abstractions.
+
   ## Examples
 
       iex> Context.new()
-      %ShotDs.Data.Context{vars: %{}, consts: %{}, constraints: MapSet.new([])}
+      %ShotDs.Data.Context{vars: %{}, consts: %{}}
 
       iex> Context.new() |> Context.put_var("X", Type.new(:o))
       %ShotDs.Data.Context{
         vars: %{"X" => %ShotDs.Data.Type{goal: :o, args: []}},
-        consts: %{},
-        constraints: MapSet.new([])
+        consts: %{}
       }
   """
 
+  alias ShotDs.Data.TypeScheme
   alias ShotDs.Data.Type
 
-  # The use of MapSet raises opaqueness warnings which can be ignored.
-  @dialyzer {:no_opaque, new: 0}
-
-  defstruct vars: %{}, consts: %{}, constraints: MapSet.new()
+  defstruct vars: %{}, consts: %{}
 
   @typedoc """
   The type of the type environment.
@@ -32,8 +38,7 @@ defmodule ShotDs.Data.Context do
   """
   @type t() :: %__MODULE__{
           vars: %{String.t() => Type.t()},
-          consts: %{String.t() => Type.t()},
-          constraints: MapSet.t({Type.t(), Type.t()})
+          consts: %{String.t() => Type.t()}
         }
 
   @doc """
@@ -46,36 +51,56 @@ defmodule ShotDs.Data.Context do
   Associates the variable with the given name with the given type in the
   context. Overwrites the old value if present.
   """
-  @spec put_var(t(), String.t(), Type.t()) :: t()
+  @spec put_var(t(), String.t() | reference(), Type.t()) :: t()
   def put_var(%__MODULE__{} = ctx, name, %Type{} = type)
       when is_binary(name) or is_reference(name) do
     %{ctx | vars: Map.put(ctx.vars, name, type)}
   end
 
   @doc """
-  Associates the constant with the given name with the given type in the
-  context. Overwrites the old value if present.
+  Associates the constant with the given name with the given type or scheme.
+  Bare monotypes are wrapped in a trivial scheme. Overwrites the old value if
+  present.
   """
-  @spec put_const(t(), String.t(), Type.t()) :: t()
+  @spec put_const(t(), String.t() | reference(), Type.t() | TypeScheme.t()) :: t()
+  def put_const(ctx, name, type_or_scheme)
+
   def put_const(%__MODULE__{} = ctx, name, %Type{} = type)
-      when is_binary(name) or is_reference(name) do
-    %{ctx | consts: Map.put(ctx.consts, name, type)}
-  end
+      when is_binary(name) or is_reference(name),
+      do: put_const(ctx, name, TypeScheme.mono(type))
+
+  def put_const(%__MODULE__{} = ctx, name, %TypeScheme{} = scheme)
+      when is_binary(name) or is_reference(name),
+      do: %{ctx | consts: Map.put(ctx.consts, name, scheme)}
 
   @doc """
-  Adds a type constraint to the context.
+  Returns the scheme of the constant with the given name, or `nil` if it is not
+  bound. Unlike `get_type/2`, this does not instantiate; callers that need the
+  raw scheme should use this function.
   """
-  @spec add_constraint(t(), Type.t(), Type.t()) :: t()
-  def add_constraint(%__MODULE__{} = ctx, %Type{} = t1, %Type{} = t2) do
-    %{ctx | constraints: MapSet.put(ctx.constraints, {t1, t2})}
-  end
+  @spec get_const_scheme(t(), String.t() | reference()) :: TypeScheme.t() | nil
+  def get_const_scheme(%__MODULE__{} = ctx, name) when is_binary(name) or is_reference(name),
+    do: Map.get(ctx.consts, name)
 
   @doc """
-  Returns the type of the given name of a constant or variable. Returns `nil`
-  if the name is not present in the context.
+  Returns the type of the given name. For variables, the stored monotype is
+  returned. For constants, the stored scheme is instantiated producing a fresh
+  monotype with new type variables for each quantified parameter.
+
+  Variables shadow constants of the same name. Returns `nil` if the name is
+  not bound.
+
+  > #### Note {:.info}
+  >
+  > Each call for a polymorphic constant returns a different monotype with
+  > disjoint fresh type variables.
   """
   @spec get_type(t(), String.t()) :: Type.t() | nil
   def get_type(%__MODULE__{} = ctx, name) when is_binary(name) or is_reference(name) do
-    Map.get(ctx.vars, name) || Map.get(ctx.consts, name)
+    Map.get(ctx.vars, name) ||
+      case Map.get(ctx.consts, name) do
+        %TypeScheme{} = scheme -> TypeScheme.instantiate(scheme)
+        nil -> nil
+      end
   end
 end

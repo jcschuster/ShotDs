@@ -14,8 +14,8 @@ defmodule ShotDs.TptpTest do
     assert {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
 
     assert problem.path == "memory"
-    assert problem.types["a"] == Type.new(:i)
-    assert problem.types["p"] == Type.new(:o, :i)
+    assert problem.types["a"].body == Type.new(:i)
+    assert problem.types["p"].body == Type.new(:o, :i)
     assert length(problem.axioms) == 1
     assert {"cj", _term_id} = problem.conjecture
   end
