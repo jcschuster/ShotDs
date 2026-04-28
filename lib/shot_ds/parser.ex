@@ -782,7 +782,8 @@ defmodule ShotDs.Parser do
   defp parse_unitary([{:exists, _, _} | rest], ctx, subst),
     do: parse_quantifier(:sigma, rest, ctx, subst)
 
-  defp parse_unitary([{:lambda, _, _} | rest], ctx, subst), do: parse_lambda(rest, ctx, subst)
+  defp parse_unitary([{:lambda, _, _} | rest], ctx, subst),
+    do: parse_lambda(rest, ctx, subst)
 
   defp parse_unitary([{:pi, _, _} | [_ | _] = rest], ctx, subst),
     do: parse_quantifier(:pi, rest, ctx, subst)
@@ -851,10 +852,6 @@ defmodule ShotDs.Parser do
 
   defp parse_app_chain(lhs, tokens, ctx, subst), do: {:ok, {lhs, tokens, ctx, subst}}
 
-  # Quantifiers and lambda. Lambda-bound variables are added to the inner
-  # context only — the outer context is preserved so the lambda's binders
-  # don't leak. The substitution, by contrast, is global and threads
-  # through.
   defp parse_quantifier(type_key, [{:lbracket, _, off} | rest], ctx, subst) do
     with {:ok, {vars, [{:rbracket, _, _}, {:colon, _, _} | body_tokens]}} <-
            parse_typed_vars_with_inference(rest),
@@ -986,10 +983,11 @@ defmodule ShotDs.Parser do
   end
 
   defp parse_atomic([{:lparen, _, _} | rest], ctx, subst) do
-    with {:ok, {term, rest2, ctx2, subst2}} <- parse_formula(rest, ctx, subst) do
-      case rest2 do
+    with {:ok, {term, rest2, ctx2, subst2}} <- parse_formula(rest, ctx, subst),
+         {:ok, {chained, rest3, ctx3, subst3}} <- parse_app_chain(term, rest2, ctx2, subst2) do
+      case rest3 do
         [{:rparen, _, _} | final_rest] ->
-          {:ok, {term, final_rest, ctx2, subst2}}
+          {:ok, {chained, final_rest, ctx3, subst3}}
 
         [{type, val, _} | _] ->
           {:error, "Syntax Error: Expected ')', found '#{val}' (#{inspect(type)})."}
