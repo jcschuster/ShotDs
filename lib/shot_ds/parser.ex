@@ -94,7 +94,7 @@ defmodule ShotDs.Parser do
   ## Options:
 
   - `ctx`: a `ShotDs.Data.Context` struct for providing type information
-  - `force_o?`: identify type variables on the outermost level type o
+  - `force_o`: identify type variables on the outermost level type o
 
   ## Example:
 
@@ -578,14 +578,14 @@ defmodule ShotDs.Parser do
     Definitions.not_equals_term(alpha)
   end
 
-  defp build_term({:pre_const, "Π", type}, subst) do
+  defp build_term({:pre_const, "∀", type}, subst) do
     %Type{args: [%Type{args: [alpha]}]} = TI.apply_subst(type, subst)
-    Definitions.pi_term(alpha)
+    Definitions.forall_term(alpha)
   end
 
-  defp build_term({:pre_const, "Σ", type}, subst) do
+  defp build_term({:pre_const, "∃", type}, subst) do
     %Type{args: [%Type{args: [alpha]}]} = TI.apply_subst(type, subst)
-    Definitions.sigma_term(alpha)
+    Definitions.exists_term(alpha)
   end
 
   defp build_term({:pre_const, name, type}, subst) do
@@ -777,19 +777,13 @@ defmodule ShotDs.Parser do
   end
 
   defp parse_unitary([{:forall, _, _} | rest], ctx, subst),
-    do: parse_quantifier(:pi, rest, ctx, subst)
+    do: parse_quantifier(:forall, rest, ctx, subst)
 
   defp parse_unitary([{:exists, _, _} | rest], ctx, subst),
-    do: parse_quantifier(:sigma, rest, ctx, subst)
+    do: parse_quantifier(:exists, rest, ctx, subst)
 
   defp parse_unitary([{:lambda, _, _} | rest], ctx, subst),
     do: parse_lambda(rest, ctx, subst)
-
-  defp parse_unitary([{:pi, _, _} | [_ | _] = rest], ctx, subst),
-    do: parse_quantifier(:pi, rest, ctx, subst)
-
-  defp parse_unitary([{:sigma, _, _} | [_ | _] = rest], ctx, subst),
-    do: parse_quantifier(:sigma, rest, ctx, subst)
 
   defp parse_unitary(tokens, ctx, subst), do: parse_equality(tokens, ctx, subst)
 
@@ -864,7 +858,7 @@ defmodule ShotDs.Parser do
             end),
          {:ok, subst3} <-
            unify_at(get_pre_type(body_pre_term), Definitions.type_o(), subst2, off) do
-      quant_name = if type_key == :pi, do: "Π", else: "Σ"
+      quant_name = if type_key == :forall, do: "∀", else: "∃"
 
       term =
         Enum.reverse(vars)
@@ -893,7 +887,7 @@ defmodule ShotDs.Parser do
         abs_type = get_pre_type(abs_term)
         element_type = Type.fresh_type_var()
         expected_pred_type = Type.new(:o, [element_type])
-        quant_name = if type_key == :pi, do: "Π", else: "Σ"
+        quant_name = if type_key == :forall, do: "∀", else: "∃"
 
         with {:ok, subst3} <- unify_at(abs_type, expected_pred_type, subst2, off) do
           quant_const = {:pre_const, quant_name, Type.new(:o, [expected_pred_type])}
@@ -920,7 +914,7 @@ defmodule ShotDs.Parser do
          alpha = Type.fresh_type_var(),
          expected_pred_type = Type.new(:o, [alpha]),
          {:ok, subst3} <- unify_at(term_type, expected_pred_type, subst2, off) do
-      quant_name = if type_key == :pi, do: "Π", else: "Σ"
+      quant_name = if type_key == :forall, do: "∀", else: "∃"
       quant_const_type = Type.new(:o, [expected_pred_type])
       quant_const = {:pre_const, quant_name, quant_const_type}
       {:ok, {{:pre_app, quant_const, term, Definitions.type_o()}, rest2, ctx2, subst3}}
@@ -1058,35 +1052,33 @@ defmodule ShotDs.Parser do
     do: {:ok, {{:pre_const, "~&", Definitions.type_ooo()}, rest, ctx, subst}}
 
   defp parse_atomic([{:forall, _, _} | [{:lbracket, _, _} | _] = rest], ctx, subst),
-    do: parse_quantifier(:pi, rest, ctx, subst)
+    do: parse_quantifier(:forall, rest, ctx, subst)
 
   defp parse_atomic([{:exists, _, _} | [{:lbracket, _, _} | _] = rest], ctx, subst),
-    do: parse_quantifier(:sigma, rest, ctx, subst)
+    do: parse_quantifier(:exists, rest, ctx, subst)
 
-  defp parse_atomic([{:pi, _, _} | [{:lparen, _, _}, {:lambda, _, _} | _] = rest], ctx, subst),
-    do: parse_quantifier(:pi, rest, ctx, subst)
+  defp parse_atomic(
+         [{:forall, _, _} | [{:lparen, _, _}, {:lambda, _, _} | _] = rest],
+         ctx,
+         subst
+       ),
+       do: parse_quantifier(:forall, rest, ctx, subst)
 
-  defp parse_atomic([{:sigma, _, _} | [{:lparen, _, _}, {:lambda, _, _} | _] = rest], ctx, subst),
-    do: parse_quantifier(:sigma, rest, ctx, subst)
-
-  defp parse_atomic([{:pi, _, _} | rest], ctx, subst) do
-    type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Π", type}, rest, ctx, subst}}
-  end
+  defp parse_atomic(
+         [{:exists, _, _} | [{:lparen, _, _}, {:lambda, _, _} | _] = rest],
+         ctx,
+         subst
+       ),
+       do: parse_quantifier(:exists, rest, ctx, subst)
 
   defp parse_atomic([{:forall, _, _} | rest], ctx, subst) do
     type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Π", type}, rest, ctx, subst}}
-  end
-
-  defp parse_atomic([{:sigma, _, _} | rest], ctx, subst) do
-    type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Σ", type}, rest, ctx, subst}}
+    {:ok, {{:pre_const, "∀", type}, rest, ctx, subst}}
   end
 
   defp parse_atomic([{:exists, _, _} | rest], ctx, subst) do
     type = Type.new(:o, [Type.new(:o, [Type.fresh_type_var()])])
-    {:ok, {{:pre_const, "Σ", type}, rest, ctx, subst}}
+    {:ok, {{:pre_const, "∃", type}, rest, ctx, subst}}
   end
 
   defp parse_atomic([{:lambda, _, _} | rest], ctx, subst), do: parse_lambda(rest, ctx, subst)

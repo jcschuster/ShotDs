@@ -69,8 +69,8 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     assert %Term{type: %Type{goal: :o}} = term!(single)
     assert %Term{type: %Type{goal: :o}} = term!(multi)
 
-    assert Formatter.format_term!(single) |> String.contains?("Π")
-    assert Formatter.format_term!(multi) |> String.contains?("Σ")
+    assert Formatter.format_term!(single) |> String.contains?("∀")
+    assert Formatter.format_term!(multi) |> String.contains?("∃")
   end
 
   test "Definitions.leibniz_equality/2 builds lambda terms with expected connective" do
@@ -103,7 +103,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
 
     # Should contain reflexivity check and implication
     rendered = Formatter.format_term!(andrews_eq)
-    assert String.contains?(rendered, "Π")
+    assert String.contains?(rendered, "∀")
   end
 
   test "Definitions.extensional_equality/1 constructs function equality" do
@@ -113,7 +113,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     assert %Term{type: %Type{goal: :o, args: [^ii, ^ii]}} = term!(ext_eq)
 
     rendered = Formatter.format_term!(ext_eq)
-    assert String.contains?(rendered, "Π")
+    assert String.contains?(rendered, "∀")
     assert String.contains?(rendered, "=")
   end
 
@@ -144,8 +144,8 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
   test "Definitions creates polymorphic constants" do
     i = Type.new(:i)
     assert %Declaration{name: "="} = Definitions.equals_const(i)
-    assert %Declaration{name: "Π"} = Definitions.pi_const(i)
-    assert %Declaration{name: "Σ"} = Definitions.sigma_const(i)
+    assert %Declaration{name: "∀"} = Definitions.forall_const(i)
+    assert %Declaration{name: "∃"} = Definitions.exists_const(i)
   end
 
   test "Definitions creates all logical operator terms" do
@@ -173,11 +173,11 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
     neq_i = Definitions.not_equals_term(i)
     assert %Term{head: %Declaration{name: "¬"}} = term!(neq_i)
 
-    pi_i = Definitions.pi_term(i)
-    assert %Term{head: %Declaration{name: "Π"}} = term!(pi_i)
+    forall_i = Definitions.forall_term(i)
+    assert %Term{head: %Declaration{name: "∀"}} = term!(forall_i)
 
-    sigma_i = Definitions.sigma_term(i)
-    assert %Term{head: %Declaration{name: "Σ"}} = term!(sigma_i)
+    exists_i = Definitions.exists_term(i)
+    assert %Term{head: %Declaration{name: "∃"}} = term!(exists_i)
   end
 
   test "Dsl expr operators work with variables" do
@@ -195,7 +195,7 @@ defmodule ShotDs.Hol.DefinitionsDslTest do
 
     # Check that it has multiple binders
     rendered = Formatter.format_term!(multi)
-    assert String.contains?(rendered, "Π")
+    assert String.contains?(rendered, "∀")
   end
 
   test "String.Chars protocol for Term works" do

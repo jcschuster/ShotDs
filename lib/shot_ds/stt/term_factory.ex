@@ -296,8 +296,16 @@ defmodule ShotDs.Stt.TermFactory do
     end
   end
 
-  defp get_signature(%Term{bvars: b, head: h, args: a, type: t, fvars: f, max_num: m}) do
-    {b, h, a, t, f, m}
+  defp get_signature(%Term{
+         bvars: b,
+         head: h,
+         args: a,
+         type: t,
+         fvars: f,
+         tvars: tv,
+         max_num: m
+       }) do
+    {b, h, a, t, f, tv, m}
   end
 
   @doc group: :"Term Cache"
@@ -386,6 +394,7 @@ defmodule ShotDs.Stt.TermFactory do
   @spec make_term(Declaration.t()) :: Term.term_id()
   def make_term(%Declaration{kind: kind, type: type} = decl) do
     fvars = if kind == :fv, do: [decl], else: []
+    tvars = Type.free_type_vars(type) |> MapSet.to_list()
 
     if Enum.empty?(type.args) do
       max_num =
@@ -394,13 +403,20 @@ defmodule ShotDs.Stt.TermFactory do
           _ -> 0
         end
 
-      memoize(%Term{id: @dummy_id, head: decl, type: type, fvars: fvars, max_num: max_num})
+      memoize(%Term{
+        id: @dummy_id,
+        head: decl,
+        type: type,
+        fvars: fvars,
+        tvars: tvars,
+        max_num: max_num
+      })
     else
-      make_eta_expanded(decl, fvars)
+      make_eta_expanded(decl, fvars, tvars)
     end
   end
 
-  defp make_eta_expanded(%Declaration{type: type} = decl, fvars) do
+  defp make_eta_expanded(%Declaration{type: type} = decl, fvars, tvars) do
     with_scratchpad!(fn ->
       new_vars = Enum.map(type.args, &Declaration.fresh_var/1)
       new_arg_ids = Enum.map(new_vars, &make_term/1)
@@ -417,6 +433,7 @@ defmodule ShotDs.Stt.TermFactory do
         args: new_arg_ids,
         type: Type.new(type.goal),
         fvars: fvars ++ new_vars,
+        tvars: tvars,
         max_num: max_num
       }
 
@@ -522,10 +539,20 @@ defmodule ShotDs.Stt.TermFactory do
 
   def make_abstr_term(term_id, %Declaration{kind: :bv, name: var_name, type: var_type} = var) do
     with {:ok, %Term{} = draft_term} <- get_term(term_id) do
-      %Term{bvars: bvars, type: term_type, max_num: max_num} = draft_term
+      %Term{bvars: bvars, type: term_type, max_num: max_num, tvars: tvars} = draft_term
       new_type = Type.new(term_type, var_type)
       new_max = max(var_name, max_num)
-      new_term = %Term{draft_term | bvars: [var | bvars], type: new_type, max_num: new_max}
+      bvar_tvars = Type.free_type_vars(var_type) |> MapSet.to_list()
+      new_tvars = Enum.uniq(tvars ++ bvar_tvars)
+
+      new_term = %Term{
+        draft_term
+        | bvars: [var | bvars],
+          type: new_type,
+          tvars: new_tvars,
+          max_num: new_max
+      }
+
       {:ok, memoize(new_term)}
     end
   end
@@ -562,7 +589,8 @@ defmodule ShotDs.Stt.TermFactory do
         res_term
 
       {:error, :invalid_id} ->
-        raise ArgumentError, message: "Given ID is not valid. Expected positive or negative integer."
+        raise ArgumentError,
+          message: "Given ID is not valid. Expected positive or negative integer."
 
       {:error, :non_existing_id} ->
         raise ArgumentError, message: "Given ID does not correspond to a memoized term."
@@ -595,11 +623,13 @@ defmodule ShotDs.Stt.TermFactory do
          ^arg1 <- right_term.type do
       new_type = Type.new(goal_type, rest_types)
       new_max_num = calc_new_max_num(left_term.head, left_term.args, bs)
+      new_tvars = calc_new_tvars(left_term.head, left_term.args, bs)
 
       body_term = %Term{
         left_term
         | bvars: bs,
           type: new_type,
+          tvars: new_tvars,
           max_num: new_max_num
       }
 
@@ -692,12 +722,14 @@ defmodule ShotDs.Stt.TermFactory do
         end
 
       new_max_num = calc_new_max_num(new_head, new_args, term.bvars)
+      new_tvars = calc_new_tvars(new_head, new_args, term.bvars)
 
       new_term = %Term{
         term
         | head: new_head,
           args: new_args,
           fvars: new_fvars,
+          tvars: new_tvars,
           max_num: new_max_num
       }
 
@@ -718,5 +750,17 @@ defmodule ShotDs.Stt.TermFactory do
     arg_maxes = Enum.map(arg_ids, fn id -> get_term!(id).max_num end)
     bvar_maxes = Enum.map(bvars, & &1.name)
     Enum.max([head_max | arg_maxes ++ bvar_maxes], fn -> 0 end)
+  end
+
+  defp calc_new_tvars(head_decl, arg_ids, bvars) do
+    head_tvars = Type.free_type_vars(head_decl.type) |> MapSet.to_list()
+
+    bvar_tvars =
+      Enum.flat_map(bvars, fn bv ->
+        Type.free_type_vars(bv.type) |> MapSet.to_list()
+      end)
+
+    arg_tvars = Enum.flat_map(arg_ids, fn id -> get_term!(id).tvars end)
+    Enum.uniq(head_tvars ++ bvar_tvars ++ arg_tvars)
   end
 end

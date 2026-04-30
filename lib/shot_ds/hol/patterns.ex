@@ -150,7 +150,7 @@ defmodule ShotDs.Hol.Patterns do
     quote do
       %Term{
         bvars: [],
-        head: %Declaration{name: "Π", type: %Type{goal: :o, args: [%Type{goal: :o, args: [_]}]}},
+        head: %Declaration{name: "∀", type: %Type{goal: :o, args: [%Type{goal: :o, args: [_]}]}},
         args: [unquote(body_id)]
       }
     end
@@ -165,7 +165,7 @@ defmodule ShotDs.Hol.Patterns do
       %Term{
         bvars: [],
         head: %Declaration{
-          name: "Π",
+          name: "∀",
           type: %Type{goal: :o, args: [%Type{goal: :o, args: [unquote(type)]}]}
         },
         args: [unquote(body_id)]
@@ -181,7 +181,7 @@ defmodule ShotDs.Hol.Patterns do
     quote do
       %Term{
         bvars: [],
-        head: %Declaration{name: "Σ", type: %Type{goal: :o, args: [%Type{goal: :o, args: [_]}]}},
+        head: %Declaration{name: "∃", type: %Type{goal: :o, args: [%Type{goal: :o, args: [_]}]}},
         args: [unquote(body_id)]
       }
     end
@@ -196,7 +196,7 @@ defmodule ShotDs.Hol.Patterns do
       %Term{
         bvars: [],
         head: %Declaration{
-          name: "Σ",
+          name: "∃",
           type: %Type{goal: :o, args: [%Type{goal: :o, args: [unquote(type)]}]}
         },
         args: [unquote(body_id)]

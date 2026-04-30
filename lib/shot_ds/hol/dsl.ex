@@ -36,8 +36,8 @@ defmodule ShotDs.Hol.Dsl do
       implies_term: 0,
       equivalent_term: 0,
       equals_term: 1,
-      pi_term: 1,
-      sigma_term: 1
+      forall_term: 1,
+      exists_term: 1
     ]
 
   alias ShotDs.Data.{Type, Declaration, Term}
@@ -116,7 +116,7 @@ defmodule ShotDs.Hol.Dsl do
   @spec forall([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
   def forall(var_types, body_fn) when is_list(var_types) and is_function(body_fn) do
     TF.with_scratchpad!(fn ->
-      build_quantified_term(var_types, body_fn, &pi_term/1)
+      build_quantified_term(var_types, body_fn, &forall_term/1)
     end)
   end
 
@@ -140,7 +140,7 @@ defmodule ShotDs.Hol.Dsl do
   @spec exists([Type.t()] | Type.t(), (... -> Term.term_id())) :: Term.term_id()
   def exists(var_types, body_fn) when is_list(var_types) and is_function(body_fn) do
     TF.with_scratchpad!(fn ->
-      build_quantified_term(var_types, body_fn, &sigma_term/1)
+      build_quantified_term(var_types, body_fn, &exists_term/1)
     end)
   end
 

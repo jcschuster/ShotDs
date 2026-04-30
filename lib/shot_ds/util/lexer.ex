@@ -99,11 +99,11 @@ defmodule ShotDs.Util.Lexer do
       string("~&") |> replace({:nand, "~&"}),
 
       # Quantifiers and Operators
-      string("!!") |> replace({:pi, "!!"}),
+      string("!!") |> replace({:forall, "!!"}),
       string("!=") |> replace({:neq, "!="}),
       string("!>") |> replace({:forall_type, "!>"}),
       string("!") |> replace({:forall, "!"}),
-      string("??") |> replace({:sigma, "??"}),
+      string("??") |> replace({:exists, "??"}),
       string("?") |> replace({:exists, "?"}),
       string("^") |> replace({:lambda, "^"}),
       string("@") |> replace({:app, "@"}),

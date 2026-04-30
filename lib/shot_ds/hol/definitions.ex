@@ -10,8 +10,8 @@ defmodule ShotDs.Hol.Definitions do
 
   Additionally, the following parameterized higher-order constants:
 
-  $$=_{\tau\to\tau\to o} \quad \Pi_{(\tau\to o)\to o} \quad
-  \Sigma_{(\tau\to o)\to o}$$
+  $$=_{\tau\to\tau\to o} \quad \forall_{(\tau\to o)\to o} \quad
+  \exists_{(\tau\to o)\to o}$$
   """
 
   alias ShotDs.Data.{Type, Declaration, Term}
@@ -193,21 +193,21 @@ defmodule ShotDs.Hol.Definitions do
 
   @doc group: :Constants
   @doc ~S"""
-  Constant representing the $\Pi_{(\tau\to o)\to o}$ operator (universal
+  Constant representing the $\forall_{(\tau\to o)\to o}$ operator (universal
   quantification) over the given element type $\tau$.
   """
-  @spec pi_const(Type.t()) :: Declaration.const_t()
-  def pi_const(%Type{} = t),
-    do: Declaration.new_const("Π", Type.new(:o, Type.new(:o, t)))
+  @spec forall_const(Type.t()) :: Declaration.const_t()
+  def forall_const(%Type{} = t),
+    do: Declaration.new_const("∀", Type.new(:o, Type.new(:o, t)))
 
   @doc group: :Constants
   @doc ~S"""
-  Constant representing the $\Sigma_{(\tau\to o)\to o}$ operator (existential
+  Constant representing the $\exists_{(\tau\to o)\to o}$ operator (existential
   quantification) over the given element type $\tau$.
   """
-  @spec sigma_const(Type.t()) :: Declaration.const_t()
-  def sigma_const(%Type{} = t),
-    do: Declaration.new_const("Σ", Type.new(:o, Type.new(:o, t)))
+  @spec exists_const(Type.t()) :: Declaration.const_t()
+  def exists_const(%Type{} = t),
+    do: Declaration.new_const("∃", Type.new(:o, Type.new(:o, t)))
 
   ##############################################################################
   # TERMS
@@ -359,21 +359,21 @@ defmodule ShotDs.Hol.Definitions do
 
   @doc group: :Terms
   @doc ~S"""
-  Term representing the $\Pi_{(\tau\to o)\to o}$ operator (universal
+  Term representing the $\forall_{(\tau\to o)\to o}$ operator (universal
   quantification) over the given element type $\tau$.
   """
-  @spec pi_term(Type.t()) :: Term.term_id()
-  def pi_term(%Type{} = t),
-    do: TF.make_const_term("Π", Type.new(:o, Type.new(:o, t)))
+  @spec forall_term(Type.t()) :: Term.term_id()
+  def forall_term(%Type{} = t),
+    do: TF.make_const_term("∀", Type.new(:o, Type.new(:o, t)))
 
   @doc group: :Terms
   @doc ~S"""
-  Term representing the $\Sigma_{(\tau\to o)\to o}$ operator (existential
+  Term representing the $\exists_{(\tau\to o)\to o}$ operator (existential
   quantification) over the given element type $\tau$.
   """
-  @spec sigma_term(Type.t()) :: Term.term_id()
-  def sigma_term(%Type{} = t),
-    do: TF.make_const_term("Σ", Type.new(:o, Type.new(:o, t)))
+  @spec exists_term(Type.t()) :: Term.term_id()
+  def exists_term(%Type{} = t),
+    do: TF.make_const_term("∃", Type.new(:o, Type.new(:o, t)))
 
   @doc group: :Equality
   @doc ~S"""
@@ -381,7 +381,7 @@ defmodule ShotDs.Hol.Definitions do
   stating that both arguments share the same properties. Generates an
   abstraction which can be applied to two arguments.
 
-  $$\mathcal{L}^\tau := \lambda X_\tau Y_\tau.\text{ }\Pi(\lambda P_{\tau\to o}.\text{ }P\text{ }X \odot P\text{ }Y)$$
+  $$\mathcal{L}^\tau := \lambda X_\tau Y_\tau.\text{ }\forall(\lambda P_{\tau\to o}.\text{ }P\text{ }X \odot P\text{ }Y)$$
 
   where $\odot \in \{\supset, \subset, \equiv\}$
   """
@@ -412,7 +412,7 @@ defmodule ShotDs.Hol.Definitions do
     |> TF.make_appl_term!(p_x)
     |> TF.make_appl_term!(p_y)
     |> TF.make_abstr_term!(p)
-    |> then(&TF.make_appl_term!(pi_term(p_type), &1))
+    |> then(&TF.make_appl_term!(forall_term(p_type), &1))
     |> TF.make_abstr_term!(y)
     |> TF.make_abstr_term!(x)
   end
@@ -423,8 +423,8 @@ defmodule ShotDs.Hol.Definitions do
   stating that both arguments share all reflexive relations. Generates an
   abstraction which can be applied to two arguments.
 
-  $$\mathcal{A}^\tau := \lambda X_\tau Y_\tau.\text{ }\Pi(\lambda Q_{\tau\to\tau\to o}.\text{ }
-  (\Pi(\lambda Z_\tau.\text{ }Q\text{ }Z\text{ }Z)) \supset Q\text{ }X\text{ }Y)$$
+  $$\mathcal{A}^\tau := \lambda X_\tau Y_\tau.\text{ }\forall(\lambda Q_{\tau\to\tau\to o}.\text{ }
+  (\forall(\lambda Z_\tau.\text{ }Q\text{ }Z\text{ }Z)) \supset Q\text{ }X\text{ }Y)$$
   """
   @spec andrews_equality(Type.t()) :: Term.term_id()
   def andrews_equality(%Type{} = type) do
@@ -442,7 +442,7 @@ defmodule ShotDs.Hol.Definitions do
       |> TF.make_appl_term!(z_term)
       |> TF.make_appl_term!(z_term)
       |> TF.make_abstr_term!(z)
-      |> then(&TF.make_appl_term!(pi_term(type), &1))
+      |> then(&TF.make_appl_term!(forall_term(type), &1))
 
     rhs =
       q_term
@@ -453,7 +453,7 @@ defmodule ShotDs.Hol.Definitions do
     |> TF.make_appl_term!(lhs)
     |> TF.make_appl_term!(rhs)
     |> TF.make_abstr_term!(q)
-    |> then(&TF.make_appl_term!(pi_term(q_type), &1))
+    |> then(&TF.make_appl_term!(forall_term(q_type), &1))
     |> TF.make_abstr_term!(y)
     |> TF.make_abstr_term!(x)
   end
@@ -464,7 +464,7 @@ defmodule ShotDs.Hol.Definitions do
   defines equality by equality of the extensions. Generates an abstraction
   which can be applied to two arguments.
 
-  $$\mathcal{E}^{\alpha\to\beta} := \lambda X_{\alpha\to\beta} Y_{\alpha\to\beta}.\text{ }\Pi(\lambda Z_\alpha. X\text{ }Z \doteq^\beta Y\text{ }Z)$$
+  $$\mathcal{E}^{\alpha\to\beta} := \lambda X_{\alpha\to\beta} Y_{\alpha\to\beta}.\text{ }\forall(\lambda Z_\alpha. X\text{ }Z \doteq^\beta Y\text{ }Z)$$
 
   for some interpretation of the inner equality relation $\doteq^\beta$.
   """
@@ -481,7 +481,7 @@ defmodule ShotDs.Hol.Definitions do
     |> TF.make_appl_term!(x_z)
     |> TF.make_appl_term!(y_z)
     |> TF.make_abstr_term!(z)
-    |> then(&TF.make_appl_term!(pi_term(at), &1))
+    |> then(&TF.make_appl_term!(forall_term(at), &1))
     |> TF.make_abstr_term!(y)
     |> TF.make_abstr_term!(x)
   end

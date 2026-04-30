@@ -39,7 +39,7 @@ defmodule ShotDs.ParserTest do
     term_id = Parser.parse("![X]: X = X") |> ok!()
 
     assert %Term{type: %Type{goal: :o, args: []}} = term!(term_id)
-    assert Formatter.format_term!(term_id) |> String.contains?("Π")
+    assert Formatter.format_term!(term_id) |> String.contains?("∀")
   end
 
   test "parse/1 expands derived connective xor into negated equivalence" do

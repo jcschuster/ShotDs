@@ -38,15 +38,15 @@ $$
 $$
 
 $$
-=_{\tau\to\tau\to o} \quad \Pi_{(\tau\to o)\to o}
-\quad \Sigma_{(\tau\to o)\to o}
+=_{\tau\to\tau\to o} \quad \forall_{(\tau\to o)\to o}
+\quad \exists_{(\tau\to o)\to o}
 $$
 
 Due to this polymorphism, the parsing algorithm might not be able to infer some
 types. Those are assigned unique _type variables_ (represented by references).
 However, if the goal type of an entire term (only on the outermost layer) is
 unknown, it is unified with type $o$ as terms are assumed to be of boolean type
-unless specified otherwise.
+unless specified otherwise if the `force_o` flag is set (or when using `~f`).
 
 ## Term Representation
 
@@ -64,7 +64,7 @@ Additionally, bound variables are represented as
 $\alpha$-equivalence and capture-avoiding substitution implicitly.
 
 Note that terms are represented in _uncurried_ format, i.e.,
-$(f\text{ }a\text{ }b)$ will become $f(a, b)$ where $f$ corresponds to the
+$(f\,a\,b)$ will become $f(a, b)$ where $f$ corresponds to the
 _head_ and $a$ and $b$ are considered the _arguments_ of the term.
 
 ## Term Construction and DSL
@@ -107,7 +107,7 @@ or including files from the [TPTP problem library](https://tptp.org/TPTP/)
 requires an environment variable `TPTP_ROOT` which points to the root directory
 of the TPTP problem library (may require a reboot for Elixir to recognize).
 
-Parsing is also available via custom sigils, e.g. ~f'' for parsing TH0 formula
+Parsing is also available via custom sigils, e.g. `~f''` for parsing TH0 formula
 strings.
 
 ## Installation
