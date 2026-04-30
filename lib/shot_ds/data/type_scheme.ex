@@ -30,12 +30,31 @@ defmodule ShotDs.Data.TypeScheme do
   @enforce_keys [:body]
   defstruct [:body, vars: []]
 
+  @typedoc """
+  Elixir type of a (rank-1 polymorphic) type scheme.
+  """
   @type t :: %__MODULE__{vars: [Type.variable_id()], body: Type.t()}
 
+  @doc """
+  Constructs a trivial type scheme representing the given monotype.
+  """
+  @spec mono(Type.t()) :: t()
   def mono(%Type{} = body), do: %__MODULE__{body: body}
 
+  @doc """
+  Constructs a type scheme binding the type variables `vars` in the (possibly
+  polymorphic) type `body`.
+  """
+  @spec new([Type.variable_id()], Type.t()) :: t()
   def new(vars, %Type{} = body) when is_list(vars),
     do: %__MODULE__{vars: vars, body: body}
+
+  @doc """
+  Instantiates the bound type variables in the given type scheme with fresh type
+  variables.
+  """
+  @spec instantiate(t()) :: Type.t()
+  def instantiate(scheme)
 
   def instantiate(%__MODULE__{vars: [], body: body}), do: body
 
@@ -44,9 +63,18 @@ defmodule ShotDs.Data.TypeScheme do
     rename(body, subst)
   end
 
+  @doc """
+  Returns the set of free type variables in the scheme. This is defined as the
+  set of free type variables in the body without the bound type variables.
+  """
+  @spec free_type_vars(t()) :: MapSet.t(Type.variable_id())
   def free_type_vars(%__MODULE__{vars: vars, body: body}),
     do: MapSet.difference(Type.free_type_vars(body), MapSet.new(vars))
 
+  @doc """
+  Generalizes a given type by binding free type variables in a scheme.
+  """
+  @spec generalize(Type.t(), MapSet.t(Type.variable_id())) :: t()
   def generalize(%Type{} = type, %MapSet{} = env_vars) do
     quantified =
       type
