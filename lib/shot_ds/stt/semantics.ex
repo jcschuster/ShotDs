@@ -350,7 +350,7 @@ defmodule ShotDs.Stt.Semantics do
     {:ok, term_id}
   end
 
-  def subst_types(term_id, type_subst) when is_map(type_subst) and map_size(type_subst) == 0 do
+  def subst_types(term_id, type_subst) when is_map(type_subst) do
     domain = MapSet.new(Map.keys(type_subst))
 
     update_env = fn _term, env -> env end
