@@ -1,7 +1,7 @@
 defmodule ShotDs.MixProject do
   use Mix.Project
 
-  @version "1.0.4"
+  @version "1.0.5"
   @source_url "https://github.com/jcschuster/ShotDs"
 
   def project do
@@ -12,7 +12,7 @@ defmodule ShotDs.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       source_url: @source_url,
-      description: "Data structures for various HOL objects and TH0 parser.",
+      description: "Data structures for various HOL objects and TH0/1 parser.",
       docs: docs(),
       package: package()
     ]
@@ -50,6 +50,7 @@ defmodule ShotDs.MixProject do
       groups_for_modules: [
         "Core Data Structures": [
           ShotDs.Data.Type,
+          ShotDs.Data.TypeScheme,
           ShotDs.Data.Declaration,
           ShotDs.Data.Term,
           ShotDs.Data.Substitution
