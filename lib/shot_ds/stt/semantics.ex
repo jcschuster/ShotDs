@@ -346,47 +346,49 @@ defmodule ShotDs.Stt.Semantics do
   """
   @spec subst_types(Term.term_id(), TypeInference.type_substitution()) ::
           {:ok, Term.term_id()} | TF.lookup_error_t()
-  def subst_types(term_id, type_subst) when is_map(type_subst) do
-    if map_size(type_subst) == 0 do
-      {:ok, term_id}
+  def subst_types(term_id, type_subst) when is_map(type_subst) and map_size(type_subst) == 0 do
+    {:ok, term_id}
+  end
+
+  def subst_types(term_id, type_subst) when is_map(type_subst) and map_size(type_subst) == 0 do
+    domain = MapSet.new(Map.keys(type_subst))
+
+    update_env = fn _term, env -> env end
+
+    short_circuit = fn term, _env ->
+      Enum.all?(term.tvars, fn tv -> not MapSet.member?(domain, tv) end)
+    end
+
+    transform = &subst_types_transform(&1, &2, &3, &4, type_subst)
+
+    case map_term(term_id, nil, update_env, transform, short_circuit) do
+      {:ok, {new_id, _cache}} -> {:ok, new_id}
+      error -> error
+    end
+  end
+
+  defp subst_types_transform(term, new_args, _env, acc_cache, type_subst) do
+    new_head = subst_decl_type(term.head, type_subst)
+    new_bvars = Enum.map(term.bvars, &subst_decl_type(&1, type_subst))
+    new_type = TypeInference.apply_subst(term.type, type_subst)
+
+    with {:ok, new_fvars} <- calc_new_fvars(new_head, new_args),
+         {:ok, new_max_num} <- calc_new_max_num(new_head, new_args, new_bvars),
+         {:ok, new_tvars} <- calc_new_tvars(new_head, new_args, new_bvars) do
+      new_term = %{
+        term
+        | head: new_head,
+          args: new_args,
+          type: new_type,
+          bvars: new_bvars,
+          fvars: new_fvars,
+          tvars: new_tvars,
+          max_num: new_max_num
+      }
+
+      {{:ok, TF.memoize(new_term)}, acc_cache}
     else
-      domain = MapSet.new(Map.keys(type_subst))
-
-      update_env = fn _term, env -> env end
-
-      short_circuit = fn term, _env ->
-        Enum.all?(term.tvars, fn tv -> not MapSet.member?(domain, tv) end)
-      end
-
-      transform = fn term, new_args, _env, acc_cache ->
-        new_head = subst_decl_type(term.head, type_subst)
-        new_bvars = Enum.map(term.bvars, &subst_decl_type(&1, type_subst))
-        new_type = TypeInference.apply_subst(term.type, type_subst)
-
-        with {:ok, new_fvars} <- calc_new_fvars(new_head, new_args),
-             {:ok, new_max_num} <- calc_new_max_num(new_head, new_args, new_bvars),
-             {:ok, new_tvars} <- calc_new_tvars(new_head, new_args, new_bvars) do
-          new_term = %{
-            term
-            | head: new_head,
-              args: new_args,
-              type: new_type,
-              bvars: new_bvars,
-              fvars: new_fvars,
-              tvars: new_tvars,
-              max_num: new_max_num
-          }
-
-          {{:ok, TF.memoize(new_term)}, acc_cache}
-        else
-          error -> {error, acc_cache}
-        end
-      end
-
-      case map_term(term_id, nil, update_env, transform, short_circuit) do
-        {:ok, {new_id, _cache}} -> {:ok, new_id}
-        error -> error
-      end
+      error -> {error, acc_cache}
     end
   end
 
@@ -443,26 +445,28 @@ defmodule ShotDs.Stt.Semantics do
       update_env = fn term, depth -> depth + length(term.bvars) end
       short_circuit = fn _term, _depth -> false end
 
-      transform = fn term, new_args, depth, acc_cache ->
-        case term.head do
-          %Declaration{kind: :co, name: name} ->
-            case Map.get(by_name, name) do
-              nil ->
-                subst_unmatched(term, new_args, acc_cache)
-
-              {polymorphic_decl, definition_id} ->
-                unfold_at(term, new_args, depth, polymorphic_decl, definition_id, acc_cache)
-            end
-
-          _ ->
-            subst_unmatched(term, new_args, acc_cache)
-        end
-      end
+      transform = &unfold_transform(&1, &2, &3, &4, by_name)
 
       case map_term(target_id, 0, update_env, transform, short_circuit) do
         {:ok, {new_id, _cache}} -> {:ok, new_id}
         error -> error
       end
+    end
+  end
+
+  defp unfold_transform(term, new_args, depth, acc_cache, by_name) do
+    case term.head do
+      %Declaration{kind: :co, name: name} ->
+        case Map.get(by_name, name) do
+          nil ->
+            subst_unmatched(term, new_args, acc_cache)
+
+          {polymorphic_decl, definition_id} ->
+            unfold_at(term, new_args, depth, polymorphic_decl, definition_id, acc_cache)
+        end
+
+      _ ->
+        subst_unmatched(term, new_args, acc_cache)
     end
   end
 
