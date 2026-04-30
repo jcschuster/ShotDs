@@ -2,12 +2,12 @@ defmodule ShotDs.Stt.Semantics do
   @moduledoc """
   Implements the semantics of Church's simple type theory. The most important
   functions are `subst/2` and `subst!/2`, which apply substitutions to a given
-  term, and `unfold_def/4` and `unfold_def!/4`, which unfold (possibly
+  term, and `unfold_defs/2` and `unfold_defs!/2`, which unfold (possibly
   polymorphic) constant definitions while instantiating their type variables
   according to each occurrence's monotype.
   """
 
-  alias ShotDs.Data.{Type, Declaration, Term, Substitution, TypeScheme}
+  alias ShotDs.Data.{Type, Declaration, Term, Substitution}
   alias ShotDs.Stt.TermFactory, as: TF
   alias ShotDs.Util.TypeInference
   import ShotDs.Util.TermTraversal
@@ -402,61 +402,77 @@ defmodule ShotDs.Stt.Semantics do
   end
 
   @doc ~S"""
-  Unfolds occurrences of a (possibly polymorphic) constant in the target term
-  by replacing each occurrence with a type-instantiated copy of the supplied
-  definition body, β-reducing the result.
+  Unfolds occurrences of all defined constants in `target_id` by replacing
+  each occurrence with a type-instantiated, β-reduced copy of the
+  corresponding definition body.
 
-  The constant is identified by `const_name`, its type scheme is given by
-  `scheme`, and `definition_id` points to the definition body whose free type
-  variables are exactly `scheme.vars`. At each occurrence the head's monotype
-  is matched against `scheme.body` to compute a type substitution covering
-  the scheme's quantified variables, which is then applied to `definition_id`
-  via `subst_types/2` before β-reducing it with the occurrence's arguments.
+  The `defs` map associates polymorphic (or monomorphic) constant declarations
+  with their definition bodies. Polymorphism is implicit: any free type
+  variables appearing in a declaration's stored type are treated as
+  universally quantified scheme variables, and the same variables are expected
+  to occur in the corresponding definition body. At each occurrence of a
+  defined constant, the declaration's polymorphic type is matched against the
+  occurrence's instance type to derive a type substitution, which is applied
+  to the definition body via `subst_types/2` before β-reducing it with the
+  occurrence's arguments.
 
-  For monomorphic constants (`scheme.vars == []`) this degenerates to constant
-  rewriting analogous to free variable substitution via `subst/2`.
+  Lookup is by constant name: each declaration is keyed in `defs` by its full
+  struct, but only its `:name` is consulted at occurrences (since the type at
+  each occurrence is the instance, not the polymorphic, type).
+
+  For a monomorphic declaration (no free type variables in its stored type)
+  this degenerates to constant rewriting analogous to free variable
+  substitution via `subst/2`.
+
+  Returns `{:ok, target_id}` immediately when `defs` is empty.
   """
-  @spec unfold_def(
-          Term.term_id(),
-          Declaration.const_name_t(),
-          TypeScheme.t(),
-          Term.term_id()
-        ) ::
+  @spec unfold_defs(Term.term_id(), %{Declaration.const_t() => Term.term_id()}) ::
           {:ok, Term.term_id()}
           | TF.lookup_error_t()
           | {:error, :incompatible_types}
           | {:error, String.t()}
-  def unfold_def(target_id, const_name, %TypeScheme{} = scheme, definition_id) do
-    update_env = fn term, depth -> depth + length(term.bvars) end
-    short_circuit = fn _term, _depth -> false end
+  def unfold_defs(target_id, defs) when is_map(defs) do
+    if map_size(defs) == 0 do
+      {:ok, target_id}
+    else
+      by_name =
+        Map.new(defs, fn {%Declaration{kind: :co, name: name} = decl, def_id} ->
+          {name, {decl, def_id}}
+        end)
 
-    transform = fn term, new_args, depth, acc_cache ->
-      case term.head do
-        %Declaration{kind: :co, name: ^const_name} ->
-          unfold_at(term, new_args, depth, scheme, definition_id, acc_cache)
+      update_env = fn term, depth -> depth + length(term.bvars) end
+      short_circuit = fn _term, _depth -> false end
 
-        _ ->
-          subst_unmatched(term, new_args, acc_cache)
+      transform = fn term, new_args, depth, acc_cache ->
+        case term.head do
+          %Declaration{kind: :co, name: name} ->
+            case Map.get(by_name, name) do
+              nil ->
+                subst_unmatched(term, new_args, acc_cache)
+
+              {polymorphic_decl, definition_id} ->
+                unfold_at(term, new_args, depth, polymorphic_decl, definition_id, acc_cache)
+            end
+
+          _ ->
+            subst_unmatched(term, new_args, acc_cache)
+        end
       end
-    end
 
-    case map_term(target_id, 0, update_env, transform, short_circuit) do
-      {:ok, {new_id, _cache}} -> {:ok, new_id}
-      error -> error
+      case map_term(target_id, 0, update_env, transform, short_circuit) do
+        {:ok, {new_id, _cache}} -> {:ok, new_id}
+        error -> error
+      end
     end
   end
 
   @doc """
-  Like `unfold_def/4`, but raises on invalid IDs or unification failures.
+  Like `unfold_defs/2`, but raises on invalid IDs or matching failures.
   """
-  @spec unfold_def!(
-          Term.term_id(),
-          Declaration.const_name_t(),
-          TypeScheme.t(),
+  @spec unfold_defs!(Term.term_id(), %{Declaration.const_t() => Term.term_id()}) ::
           Term.term_id()
-        ) :: Term.term_id()
-  def unfold_def!(target_id, const_name, %TypeScheme{} = scheme, definition_id) do
-    case unfold_def(target_id, const_name, scheme, definition_id) do
+  def unfold_defs!(target_id, defs) do
+    case unfold_defs(target_id, defs) do
       {:ok, new_id} -> new_id
       {:error, reason} -> raise ArgumentError, message: inspect(reason)
     end
@@ -466,13 +482,13 @@ defmodule ShotDs.Stt.Semantics do
          %Term{head: const_decl, bvars: bvars, fvars: fvars},
          new_args,
          depth,
-         scheme,
+         polymorphic_decl,
          definition_id,
          acc_cache
        ) do
     shift_cache = Map.get(acc_cache, {:shift_cache, depth}, %{})
 
-    with {:ok, type_subst} <- match_scheme(scheme, const_decl.type),
+    with {:ok, type_subst} <- match_decl(polymorphic_decl, const_decl.type),
          {:ok, instantiated_def_id} <- subst_types(definition_id, type_subst),
          {:ok, {shifted_def_id, next_shift_cache}} <-
            shift(instantiated_def_id, depth, 0, shift_cache),
@@ -507,19 +523,25 @@ defmodule ShotDs.Stt.Semantics do
   end
 
   # Computes a type substitution σ such that
-  # `apply_subst(scheme.body, σ) == instance_type` restricted to `scheme.vars`.
+  # `apply_subst(polymorphic_decl.type, σ) == instance_type`, restricted to the
+  # free type variables of the polymorphic declaration's stored type.
   #
-  # Variables in `scheme.vars` are unique references that don't appear in
-  # `instance_type`, so plain unification followed by domain restriction
-  # produces the desired matching substitution.
-  @spec match_scheme(TypeScheme.t(), Type.t()) ::
+  # The free type variables of `polymorphic_decl.type` are unique references
+  # that don't appear in `instance_type` (which is fully concrete at the
+  # occurrence), so plain unification followed by domain restriction produces
+  # the desired matching substitution.
+  @spec match_decl(Declaration.const_t(), Type.t()) ::
           {:ok, TypeInference.type_substitution()} | {:error, String.t()}
-  defp match_scheme(%TypeScheme{vars: []}, _instance_type), do: {:ok, %{}}
+  defp match_decl(%Declaration{type: poly_type}, instance_type) do
+    scheme_vars = Type.free_type_vars(poly_type)
 
-  defp match_scheme(%TypeScheme{vars: vars, body: body}, instance_type) do
-    case TypeInference.unify(body, instance_type, %{}) do
-      {:ok, subst} -> {:ok, Map.take(subst, vars)}
-      {:error, _} = err -> err
+    if MapSet.size(scheme_vars) == 0 do
+      {:ok, %{}}
+    else
+      case TypeInference.unify(poly_type, instance_type, %{}) do
+        {:ok, subst} -> {:ok, Map.take(subst, MapSet.to_list(scheme_vars))}
+        {:error, _} = err -> err
+      end
     end
   end
 
