@@ -1,10 +1,10 @@
 defmodule ShotDs.Util.TypeInference do
-  @moduledoc false
-  # Robinson first-order unification for the rank-1 HM type system.
-  # Used by the parser in W-style: each application/connective node calls
-  # unify/3 immediately during the AST traversal, threading the running
-  # substitution. The legacy constraint-set entry points (solve/solve!) are
-  # kept as deprecated wrappers.
+  @moduledoc """
+  Robinson first-order unification for the rank-1 HM type system.
+
+  Used by the parser in W-style: each application/connective node calls unify/3
+  immediately during the AST traversal, updating the running substitution.
+  """
 
   alias ShotDs.Data.Type
 
@@ -34,9 +34,6 @@ defmodule ShotDs.Util.TypeInference do
   Both arguments are first resolved through the current substitution, so
   callers do not need to pre-apply themselves. Standard Robinson first-order
   unification with occurs check.
-
-  This is the W-style entry point: the parser calls `unify/3` directly during
-  AST traversal rather than collecting deferred constraints.
   """
   @spec unify(general_type(), general_type(), type_substitution()) ::
           {:ok, type_substitution()} | {:error, String.t()}
@@ -77,12 +74,9 @@ defmodule ShotDs.Util.TypeInference do
 
   def apply_subst(other, _subst), do: other
 
-  #############################################################################
+  ##############################################################################
   # UNIFICATION LOGIC (internal)
-  #############################################################################
-  # The do_unify family assumes its inputs have already had the current
-  # substitution applied. The public `unify/3` is responsible for that
-  # apply_subst step.
+  ##############################################################################
 
   @spec do_unify(general_type(), general_type(), type_substitution()) ::
           {:ok, type_substitution()} | {:error, String.t()}
@@ -105,12 +99,10 @@ defmodule ShotDs.Util.TypeInference do
     end
   end
 
-  # Fallbacks for raw variables/atoms directly
   defp do_unify(ref, %Type{} = t, subst) when is_reference(ref), do: bind(ref, t, subst)
   defp do_unify(%Type{} = t, ref, subst) when is_reference(ref), do: bind(ref, t, subst)
   defp do_unify(t1, t2, subst), do: unify_terms(t1, t2, subst)
 
-  # Helper for unifying bases (atoms or references)
   defp unify_terms(t, t, subst), do: {:ok, subst}
   defp unify_terms(ref, t, subst) when is_reference(ref), do: bind(ref, t, subst)
   defp unify_terms(t, ref, subst) when is_reference(ref), do: bind(ref, t, subst)
@@ -137,7 +129,6 @@ defmodule ShotDs.Util.TypeInference do
     end
   end
 
-  # Handles partial application unification
   defp unify_partial(g_short, a_short, g_long, a_long, subst) when is_reference(g_short) do
     {shared_a_long, extra_a_long} = Enum.split(a_long, length(a_short))
 
@@ -167,8 +158,6 @@ defmodule ShotDs.Util.TypeInference do
 
   defp unify_partial(_, _, _, _, _),
     do: {:error, "Type Error: Cannot unify strict function types of different arities."}
-
-  # --- BINDING AND OCCURS CHECK ---
 
   defp bind(ref, type, subst) do
     if occurs?(ref, type) do
