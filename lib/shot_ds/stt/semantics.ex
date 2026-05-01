@@ -372,23 +372,123 @@ defmodule ShotDs.Stt.Semantics do
     new_bvars = Enum.map(term.bvars, &subst_decl_type(&1, type_subst))
     new_type = TypeInference.apply_subst(term.type, type_subst)
 
-    with {:ok, new_fvars} <- calc_new_fvars(new_head, new_args),
-         {:ok, new_max_num} <- calc_new_max_num(new_head, new_args, new_bvars),
-         {:ok, new_tvars} <- calc_new_tvars(new_head, new_args, new_bvars) do
-      new_term = %{
-        term
-        | head: new_head,
-          args: new_args,
-          type: new_type,
-          bvars: new_bvars,
-          fvars: new_fvars,
-          tvars: new_tvars,
-          max_num: new_max_num
-      }
+    m = length(new_bvars)
+    n = length(new_type.args)
 
-      {{:ok, TF.memoize(new_term)}, acc_cache}
+    if n > m do
+      # ETA-LONG RECOVERY: After substitution, new_type.args is longer than
+      # new_bvars. This happens when a type variable that appears in the term's
+      # type goal is substituted with a function type, lengthening type.args
+      # without adding bvars. Re-eta-extend by introducing (n - m) fresh inner
+      # bvars (with types matching the trailing entries of new_type.args),
+      # appending corresponding bv references to the args, and shifting all
+      # outward-pointing bv references upward by (n - m) so they continue to
+      # refer to the same binders.
+      eta_extend_inner(term, new_head, new_args, new_bvars, new_type, n - m, acc_cache)
     else
-      error -> {error, acc_cache}
+      with {:ok, new_fvars} <- calc_new_fvars(new_head, new_args),
+           {:ok, new_max_num} <- calc_new_max_num(new_head, new_args, new_bvars),
+           {:ok, new_tvars} <- calc_new_tvars(new_head, new_args, new_bvars) do
+        new_term = %{
+          term
+          | head: new_head,
+            args: new_args,
+            type: new_type,
+            bvars: new_bvars,
+            fvars: new_fvars,
+            tvars: new_tvars,
+            max_num: new_max_num
+        }
+
+        {{:ok, TF.memoize(new_term)}, acc_cache}
+      else
+        error -> {error, acc_cache}
+      end
+    end
+  end
+
+  # Build  λnew_bvars. λnew_inner_bvars. (head_shifted @ args_shifted @ inner_refs)
+  # to restore the invariant length(type.args) == length(bvars).
+  defp eta_extend_inner(term, new_head, new_args, new_bvars, new_type, n_extra, acc_cache) do
+    # Fresh inner bvars matching the trailing n_extra type args.
+    # De Bruijn order: outer-of-new = name n_extra, innermost = name 1.
+    missing_types = Enum.drop(new_type.args, length(new_bvars))
+
+    new_inner_bvars =
+      missing_types
+      |> Enum.with_index()
+      |> Enum.map(fn {t, idx} ->
+        Declaration.new_bound_var(n_extra - idx, t)
+      end)
+
+    shifted_existing_bvars =
+      Enum.map(new_bvars, fn bv -> %{bv | name: bv.name + n_extra} end)
+
+    combined_bvars = shifted_existing_bvars ++ new_inner_bvars
+
+    case shift_args_by(new_args, n_extra, acc_cache) do
+      {:ok, {shifted_args, cache_after_shift}} ->
+        new_head_shifted =
+          case new_head do
+            %Declaration{kind: :bv, name: idx, type: type} ->
+              Declaration.new_bound_var(idx + n_extra, type)
+
+            decl ->
+              decl
+          end
+
+        new_inner_arg_ids = Enum.map(new_inner_bvars, &TF.make_term/1)
+        final_args = shifted_args ++ new_inner_arg_ids
+
+        with {:ok, final_fvars} <- calc_new_fvars(new_head_shifted, final_args),
+             {:ok, final_max_num} <-
+               calc_new_max_num(new_head_shifted, final_args, combined_bvars),
+             {:ok, final_tvars} <-
+               calc_new_tvars(new_head_shifted, final_args, combined_bvars) do
+          final_term = %{
+            term
+            | head: new_head_shifted,
+              args: final_args,
+              type: new_type,
+              bvars: combined_bvars,
+              fvars: final_fvars,
+              tvars: final_tvars,
+              max_num: final_max_num
+          }
+
+          {{:ok, TF.memoize(final_term)}, cache_after_shift}
+        else
+          error -> {error, cache_after_shift}
+        end
+
+      error ->
+        {error, acc_cache}
+    end
+  end
+
+  defp shift_args_by(arg_ids, d, acc_cache) do
+    cache_key = {:shift_cache, d}
+    initial_cache = Map.get(acc_cache, cache_key, %{})
+
+    result =
+      Enum.reduce_while(arg_ids, {:ok, {[], initial_cache}}, fn arg_id, {:ok, {acc, cache}} ->
+        case shift(arg_id, d, 0, cache) do
+          {:ok, {shifted_id, new_cache}} ->
+            {:cont, {:ok, {[shifted_id | acc], new_cache}}}
+
+          error ->
+            {:halt, error}
+        end
+      end)
+
+    case result do
+      {:ok, {reversed_acc, final_cache}} ->
+        shifted_args = Enum.reverse(reversed_acc)
+        updated_acc_cache = Map.put(acc_cache, cache_key, final_cache)
+        {:ok, {shifted_args, updated_acc_cache}}
+
+      error ->
+        error
     end
   end
 
