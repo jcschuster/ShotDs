@@ -99,15 +99,18 @@ defmodule ShotDs.Data.Declaration do
   """
   @spec format(t(), boolean()) :: String.t()
   def format(%__MODULE__{kind: kind, name: name, type: type}, hide_type \\ true) do
-    prefix = if is_reference(name), do: kind_prefix(kind), else: ""
     suffix = if hide_type, do: "", else: "_#{type}"
-    prefix <> format_name(name) <> suffix
+    format_name(name, kind) <> suffix
   end
 
-  defp format_name(ref) when is_reference(ref),
-    do: "[#{ShotDs.Util.Formatter.short_ref(ref)}]"
+  defp format_name(ref, kind) when is_reference(ref) and kind in [:co, :fv] do
+    case Process.get(:hol_aliases, %{}) do
+      %{^ref => nick} -> nick
+      _ -> kind_prefix(kind) <> "[#{ShotDs.Util.Formatter.short_ref(ref)}]"
+    end
+  end
 
-  defp format_name(name) when is_binary(name) or is_integer(name),
+  defp format_name(name, _kind) when is_binary(name) or is_integer(name),
     do: Kernel.to_string(name)
 
   defp kind_prefix(:fv), do: "V"

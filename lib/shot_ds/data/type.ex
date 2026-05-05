@@ -116,6 +116,10 @@ defimpl String.Chars, for: ShotDs.Data.Type do
 
   defp goal_to_str(goal) when is_atom(goal), do: Atom.to_string(goal)
 
-  defp goal_to_str(goal) when is_reference(goal),
-    do: "T[#{ShotDs.Util.Formatter.short_ref(goal)}]"
+  defp goal_to_str(goal) when is_reference(goal) do
+    case Process.get(:hol_aliases, %{}) do
+      %{^goal => nick} -> nick
+      _ -> "T[#{ShotDs.Util.Formatter.short_ref(goal)}]"
+    end
+  end
 end

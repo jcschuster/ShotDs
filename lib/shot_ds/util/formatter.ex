@@ -11,6 +11,26 @@ defmodule ShotDs.Util.Formatter do
   @prefix_ops ["¬", "∀", "∃"]
 
   @doc """
+  Runs `fun` with the given alias map active. The map is consulted by
+  `Declaration.format/2` and `Type`'s `String.Chars` impl when rendering
+  fresh references. Restores the previous binding (if any) on exit.
+  """
+  @spec with_aliases(%{reference() => String.t()}, (-> a)) :: a when a: var
+  def with_aliases(aliases, fun) when is_map(aliases) and is_function(fun, 0) do
+    prev = Process.get(:hol_aliases)
+    Process.put(:hol_aliases, aliases)
+
+    try do
+      fun.()
+    after
+      case prev do
+        nil -> Process.delete(:hol_aliases)
+        m -> Process.put(:hol_aliases, m)
+      end
+    end
+  end
+
+  @doc """
   Pretty-prints the given HOL object taking the ETS cache into accout for
   recursively traversing term DAGs. This is implemented for singular types,
   declarations, terms (via ID or struct), substitutions and TPTP proof problems.
