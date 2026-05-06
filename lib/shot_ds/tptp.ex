@@ -7,7 +7,7 @@ defmodule ShotDs.Tptp do
   https://doi.org/10.1007/s10817-017-9407-7.
   """
 
-  alias ShotDs.Data.{Context, Problem, Declaration, Term}
+  alias ShotDs.Data.{Context, Problem, Declaration, Term, TypeScheme}
   alias ShotDs.Parser
   alias ShotDs.Util.Lexer
   alias ShotDs.Stt.TermFactory, as: TF
@@ -292,7 +292,10 @@ defmodule ShotDs.Tptp do
 
     Enum.reduce(problem.definitions, ctx_with_types, fn
       {%Declaration{name: name, type: type}, _rhs_term_id}, ctx ->
-        Context.put_const(ctx, name, type)
+        case Context.get_const_scheme(ctx, name) do
+          nil -> Context.put_const(ctx, name, TypeScheme.generalize(type, MapSet.new()))
+          _scheme -> ctx
+        end
     end)
   end
 
