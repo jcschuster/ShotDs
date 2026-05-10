@@ -40,6 +40,7 @@ notify info "Starting test suite..."
 
 # Engineering Directives
 
+- **TODO List:** Always show a todo list with your current goals.
 - **Minimalism:** Do not overengineer. Use the simplest tool for the job. Favor Elixir's standard library over complex custom abstractions.
 - **Architecture:** Follow Clean Architecture principles. Maintain clear boundaries between your core logic and external interfaces (Livebook, Database).
 

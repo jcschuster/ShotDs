@@ -41,8 +41,10 @@ defmodule ShotDs.Util.Lexer do
     "axiom" => :axiom,
     "definition" => :definition,
     "conjecture" => :conjecture,
+    "negated_conjecture" => :negated_conjecture,
     "lemma" => :lemma,
-    "hypothesis" => :hypothesis
+    "hypothesis" => :hypothesis,
+    "assumption" => :assumption
   }
 
   @doc false

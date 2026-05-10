@@ -248,6 +248,10 @@ defmodule ShotDs.Tptp do
     {:ok, %{problem | conjecture: {name, term_id}}}
   end
 
+  defp update_problem_statements(problem, :negated_conjecture, name, term_id) do
+    {:ok, %{problem | axioms: problem.axioms ++ [{name, term_id}]}}
+  end
+
   defp update_problem_statements(problem, _role, _name, _term_id), do: {:ok, problem}
 
   defp extract_formula(tokens), do: split_at_entry_end(tokens, 0, [])

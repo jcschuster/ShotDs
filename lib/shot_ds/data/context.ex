@@ -27,7 +27,7 @@ defmodule ShotDs.Data.Context do
   alias ShotDs.Data.TypeScheme
   alias ShotDs.Data.Type
 
-  defstruct vars: %{}, consts: %{}
+  defstruct vars: %{}, consts: %{}, type_vars: %{}
 
   @typedoc """
   The type of the type environment.
@@ -35,10 +35,14 @@ defmodule ShotDs.Data.Context do
   A context contains the type of variables (`:vars`) as a `Map` from its name
   to its type. Likewise for the constants (`:consts`). The type constraints
   are represented as a `MapSet` of `ShotDs.Data.Type` pairs.
+
+  The `type_vars` field maps TH1 type-variable names to their `reference()`
+  identifiers for use during formula-level polymorphism parsing.
   """
   @type t() :: %__MODULE__{
           vars: %{String.t() => Type.t()},
-          consts: %{String.t() => Type.t()}
+          consts: %{String.t() => TypeScheme.t()},
+          type_vars: %{String.t() => reference()}
         }
 
   @doc """

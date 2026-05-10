@@ -64,6 +64,22 @@ defmodule ShotDs.Data.TypeScheme do
   end
 
   @doc """
+  Like `instantiate/1`, but also returns the list of fresh type-variable
+  references created for each bound variable (in order). Used by the TH1
+  formula parser to track which fresh refs correspond to the type parameters
+  so they can be unified with explicit type arguments during type erasure.
+  """
+  @spec instantiate_with_refs(t()) :: {Type.t(), [reference()]}
+  def instantiate_with_refs(%__MODULE__{vars: [], body: body}), do: {body, []}
+
+  def instantiate_with_refs(%__MODULE__{vars: vars, body: body}) do
+    pairs = Enum.map(vars, fn v -> {v, make_ref()} end)
+    subst = Map.new(pairs)
+    fresh_refs = Enum.map(pairs, fn {_, r} -> r end)
+    {rename(body, subst), fresh_refs}
+  end
+
+  @doc """
   Returns the set of free type variables in the scheme. This is defined as the
   set of free type variables in the body without the bound type variables.
   """

@@ -417,18 +417,33 @@ defmodule ShotDs.Parser do
           {:ok, {Type.t(), Lexer.tokens(), %{String.t() => reference()}}}
           | {:error, String.t()}
   defp parse_poly_type_tokens(tokens, env) do
-    case parse_atomic_poly_type(tokens, env) do
-      {:ok, {lhs, [{:arrow, _, _} | rest], env2}} ->
-        with {:ok, {rhs, rest2, env3}} <- parse_poly_type_tokens(rest, env2),
-             do: {:ok, {Type.new(rhs, lhs), rest2, env3}}
+    with {:ok, {lhs, rest, env2}} <- parse_atomic_type_with_app(tokens, env) do
+      case rest do
+        [{:arrow, _, _} | rest2] ->
+          with {:ok, {rhs, rest3, env3}} <- parse_poly_type_tokens(rest2, env2),
+               do: {:ok, {Type.new(rhs, lhs), rest3, env3}}
 
-      {:ok, _} = ok ->
-        ok
-
-      {:error, _} = err ->
-        err
+        _ ->
+          {:ok, {lhs, rest, env2}}
+      end
     end
   end
+
+  # Parses an atomic poly type followed by zero or more `@ arg` applications
+  # (left-associative type-constructor application, e.g. `set @ A`).
+  defp parse_atomic_type_with_app(tokens, env) do
+    with {:ok, {base, rest, env2}} <- parse_atomic_poly_type(tokens, env) do
+      parse_type_app_chain(base, rest, env2)
+    end
+  end
+
+  defp parse_type_app_chain(%Type{} = acc, [{:app, _, _} | rest], env) do
+    with {:ok, {arg, rest2, env2}} <- parse_atomic_poly_type(rest, env) do
+      parse_type_app_chain(%Type{acc | args: acc.args ++ [arg]}, rest2, env2)
+    end
+  end
+
+  defp parse_type_app_chain(acc, tokens, env), do: {:ok, {acc, tokens, env}}
 
   defp parse_atomic_poly_type([{:system, "$i", _} | rest], env),
     do: {:ok, {Type.new(:i), rest, env}}
@@ -441,6 +456,10 @@ defmodule ShotDs.Parser do
 
   defp parse_atomic_poly_type([{:atom, name, _} | rest], env),
     do: {:ok, {Type.new(String.to_atom(name)), rest, env}}
+
+  defp parse_atomic_poly_type([{:distinct, name, _} | rest], env) do
+    name |> String.trim("'") |> String.to_atom() |> Type.new() |> then(&{:ok, {&1, rest, env}})
+  end
 
   defp parse_atomic_poly_type([{:var, name, _} | rest], env) do
     {ref, env2} = ensure_type_var_ref(name, env)
@@ -539,6 +558,9 @@ defmodule ShotDs.Parser do
   # TERM BUILDER
   ##############################################################################
 
+  defp build_term({:pre_const_poly, name, type, _remaining}, subst),
+    do: build_term({:pre_const, name, type}, subst)
+
   defp build_term({:pre_app, f, arg, _type}, subst) do
     TF.make_appl_term!(build_term(f, subst), build_term(arg, subst))
   end
@@ -616,6 +638,9 @@ defmodule ShotDs.Parser do
     end
   end
 
+  # Specific clauses before the general tuple-arity patterns.
+  defp get_pre_type({:pre_const_poly, _, type, _}), do: type
+  defp get_pre_type({:pre_type_arg, type}), do: type
   defp get_pre_type({_, _, _, type}), do: type
   defp get_pre_type({_, _, _, _, type}), do: type
   defp get_pre_type({_, _, type}), do: type
@@ -830,6 +855,31 @@ defmodule ShotDs.Parser do
     end
   end
 
+  # Type application (TH1): polymorphic constant with pending type-param refs.
+  # The next @ argument is a type, not a term. We do type erasure: unify the
+  # pending ref with the provided type and skip building an app node.
+  defp parse_app_chain(
+         {:pre_const_poly, name, type, [next_ref | remaining]},
+         [{:app, _, _} | rest],
+         ctx,
+         subst
+       ) do
+    case parse_type_arg(rest, ctx) do
+      {:ok, {type_arg, rest2}} ->
+        subst2 = Map.put(subst, next_ref, type_arg)
+
+        updated_lhs =
+          if remaining == [],
+            do: {:pre_const, name, type},
+            else: {:pre_const_poly, name, type, remaining}
+
+        parse_app_chain(updated_lhs, rest2, ctx, subst2)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
   defp parse_app_chain(lhs, [{:app, _, off} | rest], ctx, subst) do
     with {:ok, {rhs, rest2, ctx2, s1}} <- parse_atomic(rest, ctx, subst) do
       t_f = get_pre_type(lhs)
@@ -846,11 +896,42 @@ defmodule ShotDs.Parser do
 
   defp parse_app_chain(lhs, tokens, ctx, subst), do: {:ok, {lhs, tokens, ctx, subst}}
 
+  # Parses a single type argument for TH1 type erasure. Handles:
+  #   - bare type-variable name (uppercase, from ctx.type_vars)
+  #   - parenthesized type expression `(set @ A)`
+  #   - bare atom or system type
+  defp parse_type_arg([{:var, name, _} | rest], ctx) do
+    case Map.fetch(ctx.type_vars, name) do
+      {:ok, ref} -> {:ok, {%Type{goal: ref, args: []}, rest}}
+      :error -> {:error, "TH1: '#{name}' is not a type variable in scope"}
+    end
+  end
+
+  defp parse_type_arg([{:lparen, _, _} | rest], ctx) do
+    case parse_poly_type_tokens(rest, ctx.type_vars) do
+      {:ok, {type, [{:rparen, _, _} | rest2], _env}} -> {:ok, {type, rest2}}
+      {:ok, {_, remaining, _}} -> {:error, "TH1: expected ')' after type arg, found #{inspect(remaining)}"}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp parse_type_arg([{:atom, name, _} | rest], _ctx),
+    do: {:ok, {Type.new(String.to_atom(name)), rest}}
+
+  defp parse_type_arg([{:system, name, _} | rest], _ctx),
+    do: {:ok, {Type.new(name |> String.trim_leading("$") |> String.to_atom()), rest}}
+
+  defp parse_type_arg(tokens, _ctx),
+    do: {:error, "TH1: expected type argument, found #{inspect(tokens)}"}
+
   defp parse_quantifier(type_key, [{:lbracket, _, off} | rest], ctx, subst) do
-    with {:ok, {vars, [{:rbracket, _, _}, {:colon, _, _} | body_tokens]}} <-
-           parse_typed_vars_with_inference(rest),
+    with {:ok, {vars, updated_tvar_env, [{:rbracket, _, _}, {:colon, _, _} | body_tokens]}} <-
+           parse_typed_vars_with_inference(rest, ctx.type_vars),
          inner_ctx =
-           Enum.reduce(vars, ctx, fn {name, type}, acc -> Context.put_var(acc, name, type) end),
+           vars
+           |> Enum.reduce(%{ctx | type_vars: updated_tvar_env}, fn {name, type}, acc ->
+             Context.put_var(acc, name, type)
+           end),
          {:ok, {body_pre_term, rest_tokens, _body_ctx, subst2}} <-
            (case body_tokens do
               [{:lparen, _, _} | _] -> parse_atomic(body_tokens, inner_ctx, subst)
@@ -869,11 +950,9 @@ defmodule ShotDs.Parser do
           {:pre_app, quant_const, abs_node, Definitions.type_o()}
         end)
 
-      # Drop the inner_ctx — outer context is unchanged. Substitution is
-      # propagated.
       {:ok, {term, rest_tokens, ctx, subst3}}
     else
-      {:ok, {_, remaining}} ->
+      {:ok, {_, _, remaining}} ->
         {:error, "Syntax Error: Expected closing bracket and colon, found: #{inspect(remaining)}"}
 
       {:error, _} = err ->
@@ -922,8 +1001,13 @@ defmodule ShotDs.Parser do
   end
 
   defp parse_lambda([{:lbracket, _, _} | rest], ctx, subst) do
-    with {:ok, {vars, rest_after_vars}} <- parse_typed_vars_with_inference(rest),
-         inner_ctx = Enum.reduce(vars, ctx, fn {n, t}, c -> Context.put_var(c, n, t) end),
+    with {:ok, {vars, updated_tvar_env, rest_after_vars}} <-
+           parse_typed_vars_with_inference(rest, ctx.type_vars),
+         inner_ctx =
+           vars
+           |> Enum.reduce(%{ctx | type_vars: updated_tvar_env}, fn {n, t}, c ->
+             Context.put_var(c, n, t)
+           end),
          [{:rbracket, _, _}, {:colon, _, _} | body_tokens] <- rest_after_vars,
          {:ok, {body_pre_term, rest_tokens, _body_ctx, subst2}} <-
            (case body_tokens do
@@ -949,31 +1033,69 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_typed_vars_with_inference(tokens, acc \\ []) do
-    case tokens do
-      [{:var, name, _}, {:comma, _, _} | rest] ->
-        parse_typed_vars_with_inference(rest, acc ++ [{name, Type.fresh_type_var()}])
+  # Parses a binder variable list `X, Y: $i, Z: set @ A, ...` returning:
+  #   {:ok, {term_vars, updated_tvar_env, remaining_tokens}}
+  # where term_vars is [{name, type}] for term-level bound variables.
+  # Type-variable binders (`A: $tType`) are added to tvar_env only and excluded
+  # from term_vars (type erasure).
+  defp parse_typed_vars_with_inference(tokens, tvar_env, term_acc \\ [])
 
-      [{:var, name, _}, {:rbracket, _, _} = rb | rest] ->
-        {:ok, {acc ++ [{name, Type.fresh_type_var()}], [rb | rest]}}
+  defp parse_typed_vars_with_inference(
+         [{:var, name, _}, {:colon, _, _}, {:system, "$tType", _} | rest],
+         tvar_env,
+         term_acc
+       ) do
+    ref = make_ref()
+    new_tvar_env = Map.put(tvar_env, name, ref)
 
-      [{:var, name, _}, {:colon, _, _} | rest] ->
-        case parse_type_tokens(rest) do
-          {:ok, {type, [{:comma, _, _} | rest2]}} ->
-            new_acc = acc ++ [{name, type}]
-            parse_typed_vars_with_inference(rest2, new_acc)
+    case rest do
+      [{:comma, _, _} | rest2] ->
+        parse_typed_vars_with_inference(rest2, new_tvar_env, term_acc)
 
-          {:ok, {type, rest2}} ->
-            new_acc = acc ++ [{name, type}]
-            {:ok, {new_acc, rest2}}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
-      other ->
-        {:error, "Syntax Error: Invalid variable mapping sequence #{inspect(other)}"}
+      _ ->
+        {:ok, {term_acc, new_tvar_env, rest}}
     end
+  end
+
+  defp parse_typed_vars_with_inference(
+         [{:var, name, _}, {:colon, _, _} | rest],
+         tvar_env,
+         term_acc
+       ) do
+    case parse_poly_type_tokens(rest, tvar_env) do
+      {:ok, {type, [{:comma, _, _} | rest2], updated_tvar_env}} ->
+        parse_typed_vars_with_inference(
+          rest2,
+          updated_tvar_env,
+          term_acc ++ [{name, type}]
+        )
+
+      {:ok, {type, rest2, updated_tvar_env}} ->
+        {:ok, {term_acc ++ [{name, type}], updated_tvar_env, rest2}}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp parse_typed_vars_with_inference(
+         [{:var, name, _}, {:comma, _, _} | rest],
+         tvar_env,
+         term_acc
+       ) do
+    parse_typed_vars_with_inference(
+      rest,
+      tvar_env,
+      term_acc ++ [{name, Type.fresh_type_var()}]
+    )
+  end
+
+  defp parse_typed_vars_with_inference([{:var, name, _} | rest], tvar_env, term_acc) do
+    {:ok, {term_acc ++ [{name, Type.fresh_type_var()}], tvar_env, rest}}
+  end
+
+  defp parse_typed_vars_with_inference(other, _tvar_env, _term_acc) do
+    {:error, "Syntax Error: Invalid variable mapping sequence #{inspect(other)}"}
   end
 
   defp parse_atomic([{:lparen, _, _} | rest], ctx, subst) do
@@ -993,27 +1115,41 @@ defmodule ShotDs.Parser do
   end
 
   defp parse_atomic([{:var, name, _} | rest], ctx, subst) do
-    case Context.get_type(ctx, name) do
-      nil ->
-        new_type = Type.fresh_type_var()
-        ctx2 = Context.put_var(ctx, name, new_type)
-        {:ok, {{:pre_var, name, new_type}, rest, ctx2, subst}}
+    case Map.fetch(ctx.type_vars, name) do
+      {:ok, ref} ->
+        # TH1 type variable used as a term-level type argument
+        {:ok, {{:pre_type_arg, %Type{goal: ref, args: []}}, rest, ctx, subst}}
 
-      type ->
-        {:ok, {{:pre_var, name, type}, rest, ctx, subst}}
+      :error ->
+        case Context.get_type(ctx, name) do
+          nil ->
+            new_type = Type.fresh_type_var()
+            ctx2 = Context.put_var(ctx, name, new_type)
+            {:ok, {{:pre_var, name, new_type}, rest, ctx2, subst}}
+
+          type ->
+            {:ok, {{:pre_var, name, type}, rest, ctx, subst}}
+        end
     end
   end
 
   defp parse_atomic([{atom_or_distinct, name, _} | rest], ctx, subst)
        when atom_or_distinct in [:atom, :distinct] do
-    case Context.get_type(ctx, name) do
-      nil ->
-        new_type = Type.fresh_type_var()
-        ctx2 = Context.put_const(ctx, name, new_type)
-        {:ok, {{:pre_const, name, new_type}, rest, ctx2, subst}}
+    case Context.get_const_scheme(ctx, name) do
+      %TypeScheme{vars: [_ | _]} = scheme ->
+        {mono_type, fresh_refs} = TypeScheme.instantiate_with_refs(scheme)
+        {:ok, {{:pre_const_poly, name, mono_type, fresh_refs}, rest, ctx, subst}}
 
-      type ->
-        {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
+      _ ->
+        case Context.get_type(ctx, name) do
+          nil ->
+            new_type = Type.fresh_type_var()
+            ctx2 = Context.put_const(ctx, name, new_type)
+            {:ok, {{:pre_const, name, new_type}, rest, ctx2, subst}}
+
+          type ->
+            {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
+        end
     end
   end
 
