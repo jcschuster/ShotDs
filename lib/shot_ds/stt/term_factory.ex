@@ -302,10 +302,11 @@ defmodule ShotDs.Stt.TermFactory do
          args: a,
          type: t,
          fvars: f,
+         consts: c,
          tvars: tv,
          max_num: m
        }) do
-    {b, h, a, t, f, tv, m}
+    {b, h, a, t, f, c, tv, m}
   end
 
   @doc group: :"Term Cache"
@@ -394,6 +395,7 @@ defmodule ShotDs.Stt.TermFactory do
   @spec make_term(Declaration.t()) :: Term.term_id()
   def make_term(%Declaration{kind: kind, type: type} = decl) do
     fvars = if kind == :fv, do: [decl], else: []
+    consts = if kind == :co, do: [decl], else: []
     tvars = Type.free_type_vars(type) |> MapSet.to_list()
 
     if Enum.empty?(type.args) do
@@ -408,15 +410,16 @@ defmodule ShotDs.Stt.TermFactory do
         head: decl,
         type: type,
         fvars: fvars,
+        consts: consts,
         tvars: tvars,
         max_num: max_num
       })
     else
-      make_eta_expanded(decl, fvars, tvars)
+      make_eta_expanded(decl, fvars, consts, tvars)
     end
   end
 
-  defp make_eta_expanded(%Declaration{type: type} = decl, fvars, tvars) do
+  defp make_eta_expanded(%Declaration{type: type} = decl, fvars, consts, tvars) do
     with_scratchpad!(fn ->
       new_vars = Enum.map(type.args, &Declaration.fresh_var/1)
       new_arg_ids = Enum.map(new_vars, &make_term/1)
@@ -433,6 +436,7 @@ defmodule ShotDs.Stt.TermFactory do
         args: new_arg_ids,
         type: Type.new(type.goal),
         fvars: fvars ++ new_vars,
+        consts: consts,
         tvars: tvars,
         max_num: max_num
       }

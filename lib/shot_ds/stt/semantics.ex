@@ -91,12 +91,14 @@ defmodule ShotDs.Stt.Semantics do
 
   defp subst_unmatched(term, new_args, acc_cache) do
     with {:ok, new_fvars} <- calc_new_fvars(term.head, new_args),
+         {:ok, new_consts} <- calc_new_consts(term.head, new_args),
          {:ok, new_tvars} <- calc_new_tvars(term.head, new_args, term.bvars),
          {:ok, new_max_num} <- calc_new_max_num(term.head, new_args, term.bvars) do
       new_term = %{
         term
         | args: new_args,
           fvars: new_fvars,
+          consts: new_consts,
           tvars: new_tvars,
           max_num: new_max_num
       }
@@ -273,12 +275,14 @@ defmodule ShotDs.Stt.Semantics do
 
     with {:ok, new_max_num} <- calc_new_max_num(new_head, new_args, bvars),
          {:ok, new_fvars} <- calc_new_fvars(new_head, new_args),
+         {:ok, new_consts} <- calc_new_consts(new_head, new_args),
          {:ok, new_tvars} <- calc_new_tvars(new_head, new_args, bvars) do
       new_term = %Term{
         term
         | head: new_head,
           args: new_args,
           fvars: new_fvars,
+          consts: new_consts,
           tvars: new_tvars,
           max_num: new_max_num
       }
@@ -299,11 +303,13 @@ defmodule ShotDs.Stt.Semantics do
        ) do
     with {:ok, new_max_num} <- calc_new_max_num(head_decl, new_args, bvars),
          {:ok, new_fvars} <- calc_new_fvars(head_decl, new_args),
+         {:ok, new_consts} <- calc_new_consts(head_decl, new_args),
          {:ok, new_tvars} <- calc_new_tvars(head_decl, new_args, bvars) do
       new_term = %Term{
         term
         | args: new_args,
           fvars: new_fvars,
+          consts: new_consts,
           tvars: new_tvars,
           max_num: new_max_num
       }
@@ -387,6 +393,7 @@ defmodule ShotDs.Stt.Semantics do
       eta_extend_inner(term, new_head, new_args, new_bvars, new_type, n - m, acc_cache)
     else
       with {:ok, new_fvars} <- calc_new_fvars(new_head, new_args),
+           {:ok, new_consts} <- calc_new_consts(new_head, new_args),
            {:ok, new_max_num} <- calc_new_max_num(new_head, new_args, new_bvars),
            {:ok, new_tvars} <- calc_new_tvars(new_head, new_args, new_bvars) do
         new_term = %{
@@ -396,6 +403,7 @@ defmodule ShotDs.Stt.Semantics do
             type: new_type,
             bvars: new_bvars,
             fvars: new_fvars,
+            consts: new_consts,
             tvars: new_tvars,
             max_num: new_max_num
         }
@@ -441,6 +449,7 @@ defmodule ShotDs.Stt.Semantics do
         final_args = shifted_args ++ new_inner_arg_ids
 
         with {:ok, final_fvars} <- calc_new_fvars(new_head_shifted, final_args),
+             {:ok, final_consts} <- calc_new_consts(new_head_shifted, final_args),
              {:ok, final_max_num} <-
                calc_new_max_num(new_head_shifted, final_args, combined_bvars),
              {:ok, final_tvars} <-
@@ -452,6 +461,7 @@ defmodule ShotDs.Stt.Semantics do
               type: new_type,
               bvars: combined_bvars,
               fvars: final_fvars,
+              consts: final_consts,
               tvars: final_tvars,
               max_num: final_max_num
           }
@@ -533,24 +543,26 @@ defmodule ShotDs.Stt.Semantics do
           | TF.lookup_error_t()
           | {:error, :incompatible_types}
           | {:error, String.t()}
+  def unfold_defs(target_id, defs) when is_map(defs) and map_size(defs) == 0,
+    do: {:ok, target_id}
+
   def unfold_defs(target_id, defs) when is_map(defs) do
-    if map_size(defs) == 0 do
-      {:ok, target_id}
-    else
-      by_name =
-        Map.new(defs, fn {%Declaration{kind: :co, name: name} = decl, def_id} ->
-          {name, {decl, def_id}}
-        end)
+    by_name =
+      Map.new(defs, fn {%Declaration{kind: :co, name: name} = decl, def_id} ->
+        {name, {decl, def_id}}
+      end)
 
-      update_env = fn term, depth -> depth + length(term.bvars) end
-      short_circuit = fn _term, _depth -> false end
+    update_env = fn term, depth -> depth + length(term.bvars) end
 
-      transform = &unfold_transform(&1, &2, &3, &4, by_name)
+    short_circuit = fn term, _depth ->
+      not Enum.any?(term.consts, fn c -> Map.has_key?(by_name, c.name) end)
+    end
 
-      case map_term(target_id, 0, update_env, transform, short_circuit) do
-        {:ok, {new_id, _cache}} -> {:ok, new_id}
-        error -> error
-      end
+    transform = &unfold_transform(&1, &2, &3, &4, by_name)
+
+    case map_term(target_id, 0, update_env, transform, short_circuit) do
+      {:ok, {new_id, _cache}} -> {:ok, new_id}
+      error -> error
     end
   end
 
@@ -674,6 +686,25 @@ defmodule ShotDs.Stt.Semantics do
     end)
     |> case do
       {:ok, arg_maxes} -> {:ok, Enum.max([head_max | arg_maxes ++ bvar_maxes], fn -> 0 end)}
+      error -> error
+    end
+  end
+
+  defp calc_new_consts(head_decl, arg_ids) do
+    head_consts =
+      case head_decl do
+        %Declaration{kind: :co} -> [head_decl]
+        _ -> []
+      end
+
+    Enum.reduce_while(arg_ids, {:ok, []}, fn id, {:ok, acc} ->
+      case TF.get_term(id) do
+        {:ok, term} -> {:cont, {:ok, [term.consts | acc]}}
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, nested_consts} -> {:ok, Enum.uniq(head_consts ++ List.flatten(nested_consts))}
       error -> error
     end
   end

@@ -5,17 +5,18 @@ defmodule ShotDs.Data.Term do
   All terms contain a deterministic ID assigned by `ShotDs.Stt.TermFactory`.
   Note that terms are in βη-normal form, i.e., fully β-reduced and η-expanded.
 
-  Besides the obvious fields `:head`, `:args` and `:type`, two accessor fields
-  are implemented for efficiency: `:fvars` contains all free variables
-  occurring in the term, `:max_num` represents the index of the highest bound
-  variable. Abstractions are identified by the `:bvars` field.
+  Besides the obvious fields `:head`, `:args` and `:type`, several accessor
+  fields are implemented for efficiency: `:fvars` contains all free variables
+  occurring in the term, `:consts` contains all constants occurring in the
+  term, `:max_num` represents the index of the highest bound variable.
+  Abstractions are identified by the `:bvars` field.
   """
 
   alias ShotDs.Data.Declaration
   alias ShotDs.Data.Type
 
   @enforce_keys [:id, :head, :type]
-  defstruct [:id, :head, :type, bvars: [], args: [], fvars: [], tvars: [], max_num: 0]
+  defstruct [:id, :head, :type, bvars: [], args: [], fvars: [], consts: [], tvars: [], max_num: 0]
 
   @typedoc """
   Term IDs present in the global ETS table managed by `ShotDs.Stt.TermFactory`
@@ -51,6 +52,7 @@ defmodule ShotDs.Data.Term do
           args: [term_id()],
           type: Type.t(),
           fvars: [Declaration.t()],
+          consts: [Declaration.const_t()],
           tvars: [Type.variable_id()],
           max_num: non_neg_integer()
         }
