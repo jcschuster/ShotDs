@@ -306,7 +306,7 @@ defmodule ShotDs.Stt.TermFactory do
          tvars: tv,
          max_num: m
        }) do
-    {b, h, a, t, f, c, tv, m}
+    {b, h, a, t, Enum.sort(f), Enum.sort(c), Enum.sort(tv), m}
   end
 
   @doc group: :"Term Cache"
