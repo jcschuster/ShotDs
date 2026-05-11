@@ -2,6 +2,7 @@ defmodule ShotDs.TptpTest do
   use ShotDs.TermFactoryCase
 
   alias ShotDs.Tptp
+  alias ShotDs.Parser
 
   test "parse_tptp_string/2 parses type declarations, axioms and conjectures" do
     content = """
@@ -104,6 +105,111 @@ defmodule ShotDs.TptpTest do
   test "parse_tptp_string/2 reports unexpected tokens" do
     assert {:error, msg} = Tptp.parse_tptp_string("$true", "memory")
     assert String.contains?(msg, "Unexpected token")
+  end
+
+  # --- unparse tests ---
+
+  test "unparse/1 renders truth and falsity" do
+    {:ok, p_true} = Tptp.parse_tptp_string("thf(ax,axiom,$true).", "memory")
+    {:ok, p_false} = Tptp.parse_tptp_string("thf(ax,axiom,$false).", "memory")
+    {_, t_id} = hd(p_true.axioms)
+    {_, f_id} = hd(p_false.axioms)
+    assert {:ok, "$true"} = Parser.unparse(t_id)
+    assert {:ok, "$false"} = Parser.unparse(f_id)
+  end
+
+  test "unparse/1 renders negation" do
+    {:ok, problem} = Tptp.parse_tptp_string("thf(ax,axiom,~$true).", "memory")
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, "~$true"} = Parser.unparse(term_id)
+  end
+
+  test "unparse/1 renders conjunction" do
+    {:ok, problem} = Tptp.parse_tptp_string("thf(ax,axiom,$true & $false).", "memory")
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, "$true & $false"} = Parser.unparse(term_id)
+  end
+
+  test "unparse/1 renders disjunction" do
+    {:ok, problem} = Tptp.parse_tptp_string("thf(ax,axiom,$true | $false).", "memory")
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, "$true | $false"} = Parser.unparse(term_id)
+  end
+
+  test "unparse/1 renders implication with parentheses for left-assoc case" do
+    {:ok, problem} =
+      Tptp.parse_tptp_string("thf(ax,axiom,($true => $false) => $true).", "memory")
+
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, formula} = Parser.unparse(term_id)
+    assert String.contains?(formula, "($true => $false) =>")
+  end
+
+  test "unparse/1 renders universal quantification" do
+    {:ok, problem} =
+      Tptp.parse_tptp_string("thf(p_t,type,p:$i>$o). thf(ax,axiom,![X:$i]: p @ X).", "memory")
+
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, formula} = Parser.unparse(term_id)
+    assert String.contains?(formula, "![")
+    assert String.contains?(formula, "$i]:")
+    assert String.contains?(formula, "p @")
+  end
+
+  test "unparse/1 renders existential quantification" do
+    {:ok, problem} =
+      Tptp.parse_tptp_string("thf(p_t,type,p:$i>$o). thf(ax,axiom,?[X:$i]: p @ X).", "memory")
+
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, formula} = Parser.unparse(term_id)
+    assert String.contains?(formula, "?[")
+  end
+
+  test "unparse/1 flattens nested universal quantifiers" do
+    {:ok, problem} =
+      Tptp.parse_tptp_string(
+        "thf(p_t,type,p:$i>$i>$o). thf(ax,axiom,![X:$i,Y:$i]: p @ X @ Y).",
+        "memory"
+      )
+
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, formula} = Parser.unparse(term_id)
+    assert String.contains?(formula, "![")
+    # Should have two variables in the single binder list
+    assert Regex.match?(~r/!\[.*:.*,.*:.*\]/, formula)
+  end
+
+  test "unparse/1 renders equality" do
+    {:ok, problem} =
+      Tptp.parse_tptp_string("thf(a_t,type,a:$i). thf(ax,axiom,a = a).", "memory")
+
+    {_, term_id} = hd(problem.axioms)
+    assert {:ok, formula} = Parser.unparse(term_id)
+    assert String.contains?(formula, " = ")
+  end
+
+  test "unparse_problem/1 with term_id wraps in thf annotation" do
+    {:ok, problem} = Tptp.parse_tptp_string("thf(cj,conjecture,$true).", "memory")
+    {_, term_id} = problem.conjecture
+    assert {:ok, output} = Tptp.unparse_problem(term_id)
+    assert String.starts_with?(output, "thf(f1, conjecture,")
+    assert String.contains?(output, "$true")
+  end
+
+  test "unparse_problem/1 with Problem struct outputs full problem" do
+    content = """
+    thf(a_t,type,a:$i).
+    thf(p_t,type,p:$i>$o).
+    thf(ax1,axiom,(p @ a)).
+    thf(cj,conjecture,?[X:$i]:(p @ X)).
+    """
+
+    {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
+    assert {:ok, output} = Tptp.unparse_problem(problem)
+    assert String.contains?(output, "thf(a, type,")
+    assert String.contains?(output, "thf(ax1, axiom,")
+    assert String.contains?(output, "thf(cj, conjecture,")
+    assert String.contains?(output, "p @")
   end
 
   defp mk_tmp_dir do

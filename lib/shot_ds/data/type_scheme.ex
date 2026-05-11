@@ -110,3 +110,18 @@ defmodule ShotDs.Data.TypeScheme do
     Type.new(new_goal, Enum.map(args, &rename(&1, subst)))
   end
 end
+
+defimpl String.Chars, for: ShotDs.Data.TypeScheme do
+  def to_string(%{vars: [], body: t}), do: Kernel.to_string(t)
+
+  def to_string(%{vars: vars, body: t}) do
+    "∀" <> Enum.map_join(vars, " ", &tvar_to_string/1) <> ". #{t}"
+  end
+
+  defp tvar_to_string(tv) when is_reference(tv) do
+    case Process.get(:hol_aliases, %{}) do
+      %{^tv => nick} -> nick
+      _ -> "T[#{ShotDs.Util.Formatter.short_ref(tv)}]"
+    end
+  end
+end

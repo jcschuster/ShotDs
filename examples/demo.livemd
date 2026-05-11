@@ -85,13 +85,13 @@ To clear up ambiguities, we can pass in a _type environment_:
 ```elixir
 alias ShotDs.Data.Context
 
-ctx = Context.new() |> Context.put_const("a", type_i())
+ctx = Context.new() |> Context.put_var("X", type_iii()) |> Context.put_const("a", type_i())
 
-Parser.parse!("X @ a", ctx)
-|> format!() |> IO.puts()
+Parser.parse!("X @ a", ctx: ctx)
+|> format!(_hide_types = false) |> IO.puts()
 ```
 
-Parsing is also available via [Sigils](https://hexdocs.pm/elixir/sigils.html) for TH0 formula strings (`~f`, `~g`), TPTP problems (`~p`) (wiht `thf(...)` tags), types (`~t`), and type environments (`~e`), including a wrapper for providing context:
+Parsing is also available via [Sigils](https://hexdocs.pm/elixir/sigils.html) for TH0/TH1 formula strings (`~f` to force type $o$, `~g` otherwise), TPTP problems (`~p`) (wiht `thf(...)` tags), types (`~t`), and type environments (`~e`), including a wrapper for providing context:
 
 ```elixir
 import ShotDs.Hol.Sigils
@@ -150,6 +150,12 @@ thf(conj,conjecture,
 IO.inspect(problem)
 
 format!(problem) |> IO.puts()
+```
+
+```elixir
+with {:ok, str} <- ShotDs.Tptp.unparse_problem(problem) do
+  IO.puts str
+end
 ```
 
 **Term Manipulation**: Various functions regarding the semantics of STT, e.g. substitutions, are handled by the `ShotDs.Stt.Semantics` module.

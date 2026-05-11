@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     curl \
     zsh \
     sudo \
+    fzf \
     ripgrep \
     fd \
     ncurses-terminfo-base

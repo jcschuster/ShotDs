@@ -107,7 +107,7 @@ defmodule ShotDs.Parser do
       iex> parse!("X @ Y", ctx: ~e(X:$i>$i, Y:$i)) |> format_term!(false)
       "(X_i>i Y_i)_i"
   """
-  @spec parse!(String.t(), Keyword.t() | Context.t()) :: Term.term_id()
+  @spec parse!(String.t(), keyword()) :: Term.term_id()
   def parse!(formula_str, opts \\ []) do
     case parse(formula_str, opts) do
       {:ok, term_id} -> term_id
@@ -418,16 +418,16 @@ defmodule ShotDs.Parser do
           | {:error, String.t()}
   defp parse_poly_type_tokens(tokens, env) do
     with {:ok, {lhs, rest, env2}} <- parse_atomic_type_with_app(tokens, env) do
-      case rest do
-        [{:arrow, _, _} | rest2] ->
-          with {:ok, {rhs, rest3, env3}} <- parse_poly_type_tokens(rest2, env2),
-               do: {:ok, {Type.new(rhs, lhs), rest3, env3}}
-
-        _ ->
-          {:ok, {lhs, rest, env2}}
-      end
+      parse_poly_type_tokens_rest(lhs, rest, env2)
     end
   end
+
+  defp parse_poly_type_tokens_rest(lhs, [{:arrow, _, _} | rest], env) do
+    with {:ok, {rhs, rest2, env2}} <- parse_poly_type_tokens(rest, env),
+         do: {:ok, {Type.new(rhs, lhs), rest2, env2}}
+  end
+
+  defp parse_poly_type_tokens_rest(lhs, rest, env), do: {:ok, {lhs, rest, env}}
 
   # Parses an atomic poly type followed by zero or more `@ arg` applications
   # (left-associative type-constructor application, e.g. `set @ A`).
@@ -909,9 +909,14 @@ defmodule ShotDs.Parser do
 
   defp parse_type_arg([{:lparen, _, _} | rest], ctx) do
     case parse_poly_type_tokens(rest, ctx.type_vars) do
-      {:ok, {type, [{:rparen, _, _} | rest2], _env}} -> {:ok, {type, rest2}}
-      {:ok, {_, remaining, _}} -> {:error, "TH1: expected ')' after type arg, found #{inspect(remaining)}"}
-      {:error, _} = err -> err
+      {:ok, {type, [{:rparen, _, _} | rest2], _env}} ->
+        {:ok, {type, rest2}}
+
+      {:ok, {_, remaining, _}} ->
+        {:error, "TH1: expected ')' after type arg, found #{inspect(remaining)}"}
+
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -1235,5 +1240,288 @@ defmodule ShotDs.Parser do
 
   defp parse_atomic([], _ctx, _subst) do
     {:error, "Syntax Error: Unexpected end of input."}
+  end
+
+  ##############################################################################
+  # UNPARSING: HOL → TPTP THF
+  ##############################################################################
+
+  @doc """
+  Converts a HOL term (by its ID) to a maximally-bracketed TPTP THF formula string.
+  Returns `{:ok, formula_str}` or `{:error, reason}`.
+  """
+  @spec unparse(Term.term_id()) :: {:ok, String.t()} | TF.lookup_error_t()
+  def unparse(term_id) when is_integer(term_id) do
+    try do
+      {str, _prec} = do_unparse(term_id, [])
+      {:ok, str}
+    rescue
+      e in ArgumentError -> {:error, e.message}
+    end
+  end
+
+  @doc false
+  @spec unparse!(Term.term_id()) :: String.t()
+  def unparse!(term_id) when is_integer(term_id) do
+    {str, _prec} = do_unparse(term_id, [])
+    str
+  end
+
+  @doc """
+  Converts a `Type.t()` to a TPTP type string.
+  """
+  @spec unparse_type(Type.t()) :: String.t()
+  def unparse_type(%Type{goal: goal, args: []}), do: unparse_type_atom(goal)
+
+  def unparse_type(%Type{goal: goal, args: args}) when goal in [:o, :i, :tType] do
+    arg_strs = Enum.map(args, &unparse_type_fn_arg/1)
+    Enum.join(arg_strs ++ [unparse_type_atom(goal)], " > ")
+  end
+
+  def unparse_type(%Type{goal: goal, args: args}) do
+    goal_str = unparse_type_atom(goal)
+    arg_strs = Enum.map(args, &unparse_type_tc_arg/1)
+    Enum.join([goal_str | arg_strs], " @ ")
+  end
+
+  @doc """
+  Converts a `TypeScheme.t()` to a TPTP type string.
+  """
+  @spec unparse_type_scheme(TypeScheme.t()) :: String.t()
+  def unparse_type_scheme(%TypeScheme{vars: [], body: body}), do: unparse_type(body)
+
+  def unparse_type_scheme(%TypeScheme{vars: vars, body: body}) do
+    names = Enum.with_index(vars) |> Enum.map(fn {_, i} -> type_var_letter(i) end)
+    aliases = Map.new(Enum.zip(vars, names))
+    vars_str = Enum.map_join(names, ", ", &"#{&1}: $tType")
+    with_type_aliases(aliases, fn -> "!>[#{vars_str}]: #{unparse_type(body)}" end)
+  end
+
+  # --- Type helpers ---
+
+  defp unparse_type_fn_arg(%Type{goal: g, args: [_ | _]} = t) when g in [:o, :i, :tType],
+    do: "(#{unparse_type(t)})"
+
+  defp unparse_type_fn_arg(t), do: unparse_type(t)
+
+  defp unparse_type_tc_arg(%Type{args: [_ | _]} = t), do: "(#{unparse_type(t)})"
+  defp unparse_type_tc_arg(t), do: unparse_type(t)
+
+  defp unparse_type_atom(:o), do: "$o"
+  defp unparse_type_atom(:i), do: "$i"
+  defp unparse_type_atom(:tType), do: "$tType"
+  defp unparse_type_atom(a) when is_atom(a), do: Atom.to_string(a)
+
+  defp unparse_type_atom(ref) when is_reference(ref) do
+    case Process.get(:tptp_type_aliases, %{}) do
+      %{^ref => name} -> name
+      _ -> "T#{:erlang.phash2(ref) |> Integer.to_string(36)}"
+    end
+  end
+
+  defp with_type_aliases(new_aliases, fun) do
+    prev = Process.get(:tptp_type_aliases, %{})
+    Process.put(:tptp_type_aliases, Map.merge(prev, new_aliases))
+
+    try do
+      fun.()
+    after
+      Process.put(:tptp_type_aliases, prev)
+    end
+  end
+
+  defp type_var_letter(i) do
+    letters = ~w(A B C D E F G H I J K L M N O P Q R S T U V W X Y Z)
+    if i < 26, do: Enum.at(letters, i), else: "T#{i}"
+  end
+
+  # --- Term unparsing ---
+
+  # All compound sub-expressions are maximally bracketed (parenthesized unless atomic).
+  # Atomic precedence = 7; everything else is < 7 and gets wrapped when used as a subterm.
+
+  defp do_unparse(term_id, scope) do
+    term = TF.get_term!(term_id)
+
+    if term.bvars == [] do
+      do_unparse_headed(term.head, term.args, scope)
+    else
+      {:ok, primitive?} = TF.primitive_term?(term_id)
+
+      if primitive? do
+        do_unparse_atomic(term.head, scope)
+      else
+        do_unparse_lambda(term, scope)
+      end
+    end
+  end
+
+  defp do_unparse_atomic(%Declaration{kind: :bv, name: k}, scope),
+    do: {Enum.at(scope, k - 1), 7}
+
+  defp do_unparse_atomic(%Declaration{name: "⊤"}, _scope), do: {"$true", 7}
+  defp do_unparse_atomic(%Declaration{name: "⊥"}, _scope), do: {"$false", 7}
+
+  defp do_unparse_atomic(%Declaration{name: name}, _scope) when is_binary(name),
+    do: {name, 7}
+
+  defp do_unparse_atomic(%Declaration{name: ref}, _scope) when is_reference(ref) do
+    case Process.get(:hol_aliases, %{}) do
+      %{^ref => nick} -> {nick, 7}
+      _ -> {"V#{:erlang.phash2(ref) |> Integer.to_string(36)}", 7}
+    end
+  end
+
+  # Wraps str in parens when prec < min_prec; used with min_prec=7 for maximal bracketing.
+  defp maybe_parens({str, prec}, min_prec) when prec < min_prec, do: "(#{str})"
+  defp maybe_parens({str, _prec}, _min_prec), do: str
+
+  defp do_unparse_headed(%Declaration{name: "⊤"}, [], _scope), do: {"$true", 7}
+  defp do_unparse_headed(%Declaration{name: "⊥"}, [], _scope), do: {"$false", 7}
+
+  defp do_unparse_headed(%Declaration{name: "¬"}, [a_id], scope) do
+    a_str = do_unparse(a_id, scope) |> maybe_parens(7)
+    {"~#{a_str}", 4}
+  end
+
+  defp do_unparse_headed(%Declaration{name: "∧"}, [a_id, b_id], scope) do
+    a_str = do_unparse(a_id, scope) |> maybe_parens(7)
+    b_str = do_unparse(b_id, scope) |> maybe_parens(7)
+    {"#{a_str} & #{b_str}", 3}
+  end
+
+  defp do_unparse_headed(%Declaration{name: "∨"}, [a_id, b_id], scope) do
+    a_str = do_unparse(a_id, scope) |> maybe_parens(7)
+    b_str = do_unparse(b_id, scope) |> maybe_parens(7)
+    {"#{a_str} | #{b_str}", 2}
+  end
+
+  defp do_unparse_headed(%Declaration{name: "⊃"}, [a_id, b_id], scope) do
+    a_str = do_unparse(a_id, scope) |> maybe_parens(7)
+    b_str = do_unparse(b_id, scope) |> maybe_parens(7)
+    {"#{a_str} => #{b_str}", 1}
+  end
+
+  defp do_unparse_headed(%Declaration{name: "≡"}, [a_id, b_id], scope) do
+    a_str = do_unparse(a_id, scope) |> maybe_parens(7)
+    b_str = do_unparse(b_id, scope) |> maybe_parens(7)
+    {"#{a_str} <=> #{b_str}", 1}
+  end
+
+  defp do_unparse_headed(%Declaration{name: "="}, [a_id, b_id], scope) do
+    a_str = do_unparse(a_id, scope) |> maybe_parens(7)
+    b_str = do_unparse(b_id, scope) |> maybe_parens(7)
+    {"#{a_str} = #{b_str}", 5}
+  end
+
+  defp do_unparse_headed(%Declaration{name: "∀"}, [inner_id], scope),
+    do: do_unparse_quant("!", inner_id, scope)
+
+  defp do_unparse_headed(%Declaration{name: "∃"}, [inner_id], scope),
+    do: do_unparse_quant("?", inner_id, scope)
+
+  defp do_unparse_headed(head, args, scope) do
+    head_str = do_unparse_name(head, scope)
+
+    if Enum.empty?(args) do
+      {head_str, 7}
+    else
+      args_strs = Enum.map(args, &(do_unparse(&1, scope) |> maybe_parens(7)))
+      {Enum.join([head_str | args_strs], " @ "), 6}
+    end
+  end
+
+  defp do_unparse_name(%Declaration{kind: :bv, name: k}, scope), do: Enum.at(scope, k - 1)
+  defp do_unparse_name(%Declaration{name: name}, _scope) when is_binary(name), do: name
+
+  defp do_unparse_name(%Declaration{name: ref}, _scope) when is_reference(ref) do
+    case Process.get(:hol_aliases, %{}) do
+      %{^ref => nick} -> nick
+      _ -> "V#{:erlang.phash2(ref) |> Integer.to_string(36)}"
+    end
+  end
+
+  defp do_unparse_lambda(%Term{bvars: bvars, head: head, args: args}, scope) do
+    len = length(scope)
+    names = Enum.with_index(bvars) |> Enum.map(fn {_, i} -> "X#{len + i + 1}" end)
+    new_scope = Enum.reverse(names) ++ scope
+    {type_binders, term_binders, new_aliases} = build_lambda_binders(bvars, names)
+    binders_str = Enum.join(type_binders ++ term_binders, ", ")
+
+    {body_str, body_prec} =
+      with_type_aliases(new_aliases, fn -> do_unparse_headed(head, args, new_scope) end)
+
+    {"^[#{binders_str}]: #{maybe_parens({body_str, body_prec}, 7)}", 0}
+  end
+
+  defp do_unparse_quant(op, lambda_id, scope) do
+    {binders, body_head, body_args, body_scope} =
+      collect_quant_binders(op, lambda_id, scope, [])
+
+    {type_binders, term_binders, new_aliases} =
+      build_lambda_binders(Enum.map(binders, &elem(&1, 1)), Enum.map(binders, &elem(&1, 0)))
+
+    binders_str = Enum.join(type_binders ++ term_binders, ", ")
+
+    {body_str, body_prec} =
+      with_type_aliases(new_aliases, fn -> do_unparse_headed(body_head, body_args, body_scope) end)
+
+    {"#{op}[#{binders_str}]: #{maybe_parens({body_str, body_prec}, 7)}", 0}
+  end
+
+  defp collect_quant_binders(op, lambda_id, scope, acc) do
+    lambda_term = TF.get_term!(lambda_id)
+
+    case lambda_term.bvars do
+      [%Declaration{kind: :bv} = bv_decl] ->
+        name = "X#{length(scope) + 1}"
+        new_scope = [name | scope]
+        new_acc = acc ++ [{name, bv_decl}]
+        quant_name = if op == "!", do: "∀", else: "∃"
+
+        can_flatten? =
+          is_binary(lambda_term.head.name) and
+            lambda_term.head.name == quant_name and
+            length(lambda_term.args) == 1
+
+        if can_flatten? do
+          [next_id] = lambda_term.args
+          collect_quant_binders(op, next_id, new_scope, new_acc)
+        else
+          {new_acc, lambda_term.head, lambda_term.args, new_scope}
+        end
+
+      _other ->
+        {acc, lambda_term.head, lambda_term.args, scope}
+    end
+  end
+
+  defp build_lambda_binders(bvars, names) do
+    all_type_refs =
+      bvars
+      |> Enum.flat_map(&(Type.free_type_vars(&1.type) |> MapSet.to_list()))
+      |> Enum.uniq()
+
+    prev_aliases = Process.get(:tptp_type_aliases, %{})
+    new_refs = Enum.reject(all_type_refs, &Map.has_key?(prev_aliases, &1))
+    base = map_size(prev_aliases)
+
+    new_aliases =
+      new_refs
+      |> Enum.with_index(base)
+      |> Map.new(fn {ref, i} -> {ref, type_var_letter(i)} end)
+
+    all_aliases = Map.merge(prev_aliases, new_aliases)
+
+    type_binders =
+      Enum.map(new_refs, fn ref -> "#{Map.fetch!(all_aliases, ref)}: $tType" end)
+
+    term_binders =
+      with_type_aliases(new_aliases, fn ->
+        Enum.zip(names, bvars)
+        |> Enum.map(fn {name, %Declaration{type: t}} -> "#{name}: #{unparse_type(t)}" end)
+      end)
+
+    {type_binders, term_binders, new_aliases}
   end
 end

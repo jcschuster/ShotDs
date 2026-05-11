@@ -7,7 +7,7 @@ defmodule ShotDs.Tptp do
   https://doi.org/10.1007/s10817-017-9407-7.
   """
 
-  alias ShotDs.Data.{Context, Problem, Declaration, Term, TypeScheme}
+  alias ShotDs.Data.{Context, Problem, Declaration, Term, Type, TypeScheme}
   alias ShotDs.Parser
   alias ShotDs.Util.Lexer
   alias ShotDs.Stt.TermFactory, as: TF
@@ -312,4 +312,92 @@ defmodule ShotDs.Tptp do
         includes: main.includes ++ [included.path | included.includes]
     }
   end
+
+  ##############################################################################
+  # UNPARSING: TPTP THF PROBLEM FORMAT
+  ##############################################################################
+
+  @doc """
+  Converts a HOL term or a `ShotDs.Data.Problem` struct to a TPTP problem
+  string with `thf(...)` annotations.
+  Returns `{:ok, tptp_str}` or `{:error, reason}`.
+  """
+  @spec unparse_problem(Term.term_id() | Problem.t()) ::
+          {:ok, String.t()} | TF.lookup_error_t() | {:error, term()}
+  def unparse_problem(term_id) when is_integer(term_id) do
+    with {:ok, formula_str} <- Parser.unparse(term_id) do
+      {:ok, "thf(f1, conjecture,\n    #{formula_str})."}
+    end
+  end
+
+  def unparse_problem(%Problem{} = problem) do
+    try do
+      {:ok, build_problem_string(problem)}
+    rescue
+      e in ArgumentError -> {:error, e.message}
+    end
+  end
+
+  # --- Problem string builder ---
+
+  defp build_problem_string(%Problem{
+         types: types,
+         definitions: defs,
+         axioms: axioms,
+         conjecture: conj
+       }) do
+    types_part =
+      Enum.map_join(types, "\n", fn
+        {name, :base_type} ->
+          "thf(#{tptp_atom(name)}, type,\n    #{tptp_atom(name)}: $tType)."
+
+        {name, %TypeScheme{} = scheme} ->
+          "thf(#{tptp_atom(name)}, type,\n    #{tptp_atom(name)}: #{Parser.unparse_type_scheme(scheme)})."
+
+        {name, %Type{} = type} ->
+          "thf(#{tptp_atom(name)}, type,\n    #{tptp_atom(name)}: #{Parser.unparse_type(type)})."
+      end)
+
+    defs_part =
+      Enum.map_join(defs, "\n", fn {%Declaration{name: name}, rhs_id} ->
+        def_name = tptp_def_annotation(name)
+        "thf(#{def_name}, definition,\n    #{tptp_atom(name)} = #{Parser.unparse!(rhs_id)})."
+      end)
+
+    axioms_part =
+      Enum.map_join(axioms, "\n", fn {name, term_id} ->
+        "thf(#{tptp_atom(name)}, axiom,\n    #{Parser.unparse!(term_id)})."
+      end)
+
+    conj_part =
+      case conj do
+        nil ->
+          nil
+
+        {name, term_id} ->
+          "thf(#{tptp_atom(name)}, conjecture,\n    #{Parser.unparse!(term_id)})."
+      end
+
+    [types_part, defs_part, axioms_part, conj_part]
+    |> Enum.reject(&(is_nil(&1) or &1 == ""))
+    |> Enum.join("\n\n")
+  end
+
+  defp tptp_atom(name) when is_binary(name) do
+    if Regex.match?(~r/^[a-z][a-zA-Z0-9_]*$/, name),
+      do: name,
+      else: "'#{String.replace(name, "'", "\\'")}'"
+  end
+
+  defp tptp_atom(ref) when is_reference(ref),
+    do: "c#{:erlang.phash2(ref) |> Integer.to_string(36)}"
+
+  defp tptp_def_annotation(name) when is_binary(name) do
+    if Regex.match?(~r/^[a-z][a-zA-Z0-9_]*$/, name),
+      do: name <> "_def",
+      else: "def_#{:erlang.phash2(name) |> Integer.to_string(36)}"
+  end
+
+  defp tptp_def_annotation(ref) when is_reference(ref),
+    do: "def_#{:erlang.phash2(ref) |> Integer.to_string(36)}"
 end

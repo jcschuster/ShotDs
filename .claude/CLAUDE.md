@@ -36,7 +36,15 @@ notify info "Starting test suite..."
 - Use `question` when you're blocked and need user input
 - Keep messages concise (the host will announce them via audio)
 - Don't over-notify - only for significant events
-- You have `rg` (ripgrep) as tool available which is significantly faster than `grep`
+
+# CLI Tools
+
+You have the following modern CLI tools available that are to be preferred over the traditional ones:
+
+- `fzf`: a fuzzy-finder
+- `rg`: like `grep` but significantly faster
+- `ast-grep`: like `grep` but works on abstract syntax trees
+- `fd`: a faster and more user-friendly alternative to `find`
 
 # Engineering Directives
 
