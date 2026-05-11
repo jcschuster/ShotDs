@@ -8,22 +8,6 @@ Mix.install([
 
 ## Installation and Setup
 
-```elixir
-a = MapSet.new() |> MapSet.put("a") |> MapSet.put("b") |> MapSet.put("c")
-b = MapSet.new() |> MapSet.put("c") |> MapSet.put("a") |> MapSet.put("b")
-
-a == b
-```
-
-```elixir
-#:ets.new(:myets, [:set, :public, :named_table, read_concurrency: false, write_concurrency: false])
-```
-
-```elixir
-:ets.insert(:myets, {a, [1, 2, 3]})
-:ets.lookup(:myets, b)
-```
-
 This package can be installed by adding `shot_ds` to your list of dependencies
 in `mix.exs`:
 
