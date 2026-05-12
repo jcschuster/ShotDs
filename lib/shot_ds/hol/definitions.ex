@@ -134,6 +134,13 @@ defmodule ShotDs.Hol.Definitions do
   ##############################################################################
 
   @doc group: :Constants
+  @doc """
+  Returns the names of the logical connectives from the signature as list.
+  """
+  @spec signature() :: [String.t()]
+  def signature, do: ~w(⊤ ⊥ ¬ ∨ ∧ ⊃ ≡ = ∀ ∃)
+
+  @doc group: :Constants
   @doc ~S"""
   Constant representing truth $\top_o$.
   """

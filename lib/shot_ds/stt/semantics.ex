@@ -11,6 +11,7 @@ defmodule ShotDs.Stt.Semantics do
   alias ShotDs.Stt.TermFactory, as: TF
   alias ShotDs.Util.TypeInference
   import ShotDs.Util.TermTraversal
+  import ShotDs.Hol.Definitions, only: [signature: 0]
 
   ##############################################################################
   # SUBSTITUTION LOGIC
@@ -692,10 +693,7 @@ defmodule ShotDs.Stt.Semantics do
 
   defp calc_new_consts(head_decl, arg_ids) do
     head_consts =
-      case head_decl do
-        %Declaration{kind: :co} -> [head_decl]
-        _ -> []
-      end
+      if head_decl.kind == :co and head_decl.name not in signature(), do: [head_decl], else: []
 
     Enum.reduce_while(arg_ids, {:ok, []}, fn id, {:ok, acc} ->
       case TF.get_term(id) do

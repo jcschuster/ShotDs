@@ -1,15 +1,16 @@
 defmodule ShotDs.Data.Term do
   @moduledoc """
-  Represents a Hol term as directed acyclic graph (DAG).
+  Represents a higher-order term as directed acyclic graph (DAG).
 
-  All terms contain a deterministic ID assigned by `ShotDs.Stt.TermFactory`.
-  Note that terms are in βη-normal form, i.e., fully β-reduced and η-expanded.
+  All terms contain a unique ID assigned by `ShotDs.Stt.TermFactory`. Note that
+  terms are in βη-normal form, i.e., fully β-reduced and η-expanded.
 
   Besides the obvious fields `:head`, `:args` and `:type`, several accessor
   fields are implemented for efficiency: `:fvars` contains all free variables
-  occurring in the term, `:consts` contains all constants occurring in the
-  term, `:max_num` represents the index of the highest bound variable.
-  Abstractions are identified by the `:bvars` field.
+  occurring in the term, `:consts` contains all non-logical constants occurring
+  in the term, `:tvars` records all non-instantiated type variables, `:max_num`
+  represents the index of the highest bound variable. Abstractions are
+  identified by the `:bvars` field.
   """
 
   alias ShotDs.Data.Declaration

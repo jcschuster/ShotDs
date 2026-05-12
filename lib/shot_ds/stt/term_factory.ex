@@ -36,6 +36,8 @@ defmodule ShotDs.Stt.TermFactory do
   @table :term_pool
   @dummy_id 0
 
+  @signature ~w(⊤ ⊥ ¬ ∨ ∧ ⊃ ≡ = ∀ ∃)
+
   @typedoc """
   There are two error scenarios when looking up a term via its ID. The ID might
   not correspond to `ShotDs.Data.Term.global_term_id()` or
@@ -393,9 +395,9 @@ defmodule ShotDs.Stt.TermFactory do
       iex> id = make_term(co)
   """
   @spec make_term(Declaration.t()) :: Term.term_id()
-  def make_term(%Declaration{kind: kind, type: type} = decl) do
+  def make_term(%Declaration{kind: kind, name: name, type: type} = decl) do
     fvars = if kind == :fv, do: [decl], else: []
-    consts = if kind == :co, do: [decl], else: []
+    consts = if kind == :co and name not in @signature, do: [decl], else: []
     tvars = Type.free_type_vars(type) |> MapSet.to_list()
 
     if Enum.empty?(type.args) do
