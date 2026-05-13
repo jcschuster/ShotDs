@@ -83,6 +83,24 @@ defmodule ShotDs.Th1Test do
     assert {"conj", _} = problem.conjecture
   end
 
+  test "parse_tptp_string/2 parses polymorphic constant under function application in type argument position" do
+    content = """
+    thf(leibniz_t, type, l: A > A > $o).
+    thf(leibniz_def, definition,
+      l = ^[X, Y]: ![P]: P @ X => P @ Y
+    ).
+    thf(conj, conjecture,
+      ![X: $i, Y: $i, F: $i > $i]: (
+        (l @ X @ Y) => (l @ (F @ X) @ (F @ Y))
+      )
+    ).
+    """
+
+    assert {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
+    assert Map.has_key?(problem.types, "l")
+    assert {"conj", _} = problem.conjecture
+  end
+
   ########## Full TPTP TH1 problem parsing ##########
 
   test "parse_tptp_string/2 parses TH1 type declarations with type-constructor application" do

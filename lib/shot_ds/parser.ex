@@ -911,8 +911,12 @@ defmodule ShotDs.Parser do
 
   defp parse_type_arg([{:lparen, _, _} | rest], ctx) do
     case parse_poly_type_tokens(rest, ctx.type_vars) do
-      {:ok, {type, [{:rparen, _, _} | rest2], _env}} ->
+      {:ok, {type, [{:rparen, _, _} | rest2], final_env}}
+      when map_size(final_env) == map_size(ctx.type_vars) ->
         {:ok, {type, rest2}}
+
+      {:ok, {_, [{:rparen, _, _} | _], _}} ->
+        {:error, "TH1: parenthesized type arg contains unknown type variables"}
 
       {:ok, {_, remaining, _}} ->
         {:error, "TH1: expected ')' after type arg, found #{inspect(remaining)}"}
