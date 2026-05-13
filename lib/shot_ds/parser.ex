@@ -860,7 +860,7 @@ defmodule ShotDs.Parser do
   # pending ref with the provided type and skip building an app node.
   defp parse_app_chain(
          {:pre_const_poly, name, type, [next_ref | remaining]},
-         [{:app, _, _} | rest],
+         [{:app, _, _} | rest] = tokens,
          ctx,
          subst
        ) do
@@ -875,8 +875,10 @@ defmodule ShotDs.Parser do
 
         parse_app_chain(updated_lhs, rest2, ctx, subst2)
 
-      {:error, _} = err ->
-        err
+      {:error, _} ->
+        # Not an explicit type argument; fall through to regular term application.
+        # Type inference will resolve the pending type refs via unification.
+        parse_app_chain({:pre_const, name, type}, tokens, ctx, subst)
     end
   end
 

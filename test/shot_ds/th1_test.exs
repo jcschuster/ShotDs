@@ -67,6 +67,22 @@ defmodule ShotDs.Th1Test do
     assert %ShotDs.Data.Term{type: %ShotDs.Data.Type{goal: :o}} = term!(term_id)
   end
 
+  test "parse_tptp_string/2 parses polymorphic constant applied to term variables without explicit type args" do
+    content = """
+    thf(leibniz_t, type, l: A > A > $o).
+    thf(leibniz_def, definition,
+      l = ^[X, Y]: ![P]: P @ X => P @ Y
+    ).
+    thf(conj, conjecture,
+      ![X: $i]: l @ X @ X
+    ).
+    """
+
+    assert {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
+    assert Map.has_key?(problem.types, "l")
+    assert {"conj", _} = problem.conjecture
+  end
+
   ########## Full TPTP TH1 problem parsing ##########
 
   test "parse_tptp_string/2 parses TH1 type declarations with type-constructor application" do
