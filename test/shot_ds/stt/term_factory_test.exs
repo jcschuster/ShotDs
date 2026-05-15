@@ -27,7 +27,7 @@ defmodule ShotDs.Stt.TermFactoryTest do
       term = TF.get_term!(id1)
       assert term.head == decl
       assert term.type == @i
-      assert term.fvars == [decl]
+      assert term.fvars == MapSet.new([decl])
     end
 
     test "automatically eta-expands function types" do

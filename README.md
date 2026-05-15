@@ -119,7 +119,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 1.0"}
+    {:shot_ds, "~> 1.2"}
   ]
 end
 ```

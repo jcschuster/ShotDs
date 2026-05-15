@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:shot_ds, "~> 1.1"}
+  {:shot_ds, "~> 1.2"}
 ])
 ```
 
@@ -16,7 +16,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 1.1"}
+    {:shot_ds, "~> 1.2"}
   ]
 end
 ```

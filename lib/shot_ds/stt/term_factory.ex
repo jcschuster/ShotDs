@@ -308,7 +308,7 @@ defmodule ShotDs.Stt.TermFactory do
          tvars: tv,
          max_num: m
        }) do
-    {b, h, a, t, Enum.sort(f), Enum.sort(c), Enum.sort(tv), m}
+    {b, h, a, t, f, c, tv, m}
   end
 
   @doc group: :"Term Cache"
@@ -394,11 +394,13 @@ defmodule ShotDs.Stt.TermFactory do
       iex> co = ShotDs.Data.Declaration.fresh_const(Type.new(:o))
       iex> id = make_term(co)
   """
+  @dialyzer {:no_opaque, [make_term: 1, make_eta_expanded: 4]}
+
   @spec make_term(Declaration.t()) :: Term.term_id()
   def make_term(%Declaration{kind: kind, name: name, type: type} = decl) do
-    fvars = if kind == :fv, do: [decl], else: []
-    consts = if kind == :co and name not in @signature, do: [decl], else: []
-    tvars = Type.free_type_vars(type) |> MapSet.to_list()
+    fvars = if kind == :fv, do: MapSet.new([decl]), else: MapSet.new()
+    consts = if kind == :co and name not in @signature, do: MapSet.new([decl]), else: MapSet.new()
+    tvars = Type.free_type_vars(type)
 
     if Enum.empty?(type.args) do
       max_num =
@@ -437,7 +439,7 @@ defmodule ShotDs.Stt.TermFactory do
         head: decl,
         args: new_arg_ids,
         type: Type.new(type.goal),
-        fvars: fvars ++ new_vars,
+        fvars: Enum.reduce(new_vars, fvars, &MapSet.put(&2, &1)),
         consts: consts,
         tvars: tvars,
         max_num: max_num
@@ -548,8 +550,8 @@ defmodule ShotDs.Stt.TermFactory do
       %Term{bvars: bvars, type: term_type, max_num: max_num, tvars: tvars} = draft_term
       new_type = Type.new(term_type, var_type)
       new_max = max(var_name, max_num)
-      bvar_tvars = Type.free_type_vars(var_type) |> MapSet.to_list()
-      new_tvars = Enum.uniq(tvars ++ bvar_tvars)
+      bvar_tvars = Type.free_type_vars(var_type)
+      new_tvars = MapSet.union(tvars, bvar_tvars)
 
       new_term = %Term{
         draft_term
@@ -710,10 +712,10 @@ defmodule ShotDs.Stt.TermFactory do
   @spec bind_var(Declaration.free_var_t(), Term.term_id()) :: Term.term_id()
   defp bind_var(%Declaration{kind: :fv} = fvar, term_id) do
     update_env = fn term, depth -> depth + length(term.bvars) end
-    short_circuit = fn term, _depth -> fvar not in term.fvars end
+    short_circuit = fn term, _depth -> not MapSet.member?(term.fvars, fvar) end
 
     transform = fn %Term{head: head, fvars: fvars} = term, new_args, depth, acc_cache ->
-      new_fvars = List.delete(fvars, fvar)
+      new_fvars = MapSet.delete(fvars, fvar)
 
       new_head =
         case head do
@@ -759,14 +761,13 @@ defmodule ShotDs.Stt.TermFactory do
   end
 
   defp calc_new_tvars(head_decl, arg_ids, bvars) do
-    head_tvars = Type.free_type_vars(head_decl.type) |> MapSet.to_list()
-
-    bvar_tvars =
-      Enum.flat_map(bvars, fn bv ->
-        Type.free_type_vars(bv.type) |> MapSet.to_list()
+    after_bvars =
+      Enum.reduce(bvars, Type.free_type_vars(head_decl.type), fn bv, acc ->
+        MapSet.union(acc, Type.free_type_vars(bv.type))
       end)
 
-    arg_tvars = Enum.flat_map(arg_ids, fn id -> get_term!(id).tvars end)
-    Enum.uniq(head_tvars ++ bvar_tvars ++ arg_tvars)
+    Enum.reduce(arg_ids, after_bvars, fn id, acc ->
+      MapSet.union(acc, get_term!(id).tvars)
+    end)
   end
 end

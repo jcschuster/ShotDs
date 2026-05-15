@@ -17,7 +17,17 @@ defmodule ShotDs.Data.Term do
   alias ShotDs.Data.Type
 
   @enforce_keys [:id, :head, :type]
-  defstruct [:id, :head, :type, bvars: [], args: [], fvars: [], consts: [], tvars: [], max_num: 0]
+  defstruct [
+    :id,
+    :head,
+    :type,
+    bvars: [],
+    args: [],
+    fvars: MapSet.new(),
+    consts: MapSet.new(),
+    tvars: MapSet.new(),
+    max_num: 0
+  ]
 
   @typedoc """
   Term IDs present in the global ETS table managed by `ShotDs.Stt.TermFactory`
@@ -52,9 +62,9 @@ defmodule ShotDs.Data.Term do
           head: Declaration.t(),
           args: [term_id()],
           type: Type.t(),
-          fvars: [Declaration.t()],
-          consts: [Declaration.const_t()],
-          tvars: [Type.variable_id()],
+          fvars: MapSet.t(Declaration.t()),
+          consts: MapSet.t(Declaration.const_t()),
+          tvars: MapSet.t(Type.variable_id()),
           max_num: non_neg_integer()
         }
 end

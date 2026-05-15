@@ -1,7 +1,7 @@
 defmodule ShotDs.MixProject do
   use Mix.Project
 
-  @version "1.1.8"
+  @version "1.2.0"
   @source_url "https://github.com/jcschuster/ShotDs"
 
   def project do

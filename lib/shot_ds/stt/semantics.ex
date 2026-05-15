@@ -33,7 +33,7 @@ defmodule ShotDs.Stt.Semantics do
 
   def subst(%Substitution{fvar: fvar, term_id: replacement_id}, term_id) do
     update_env = fn term, depth -> depth + length(term.bvars) end
-    short_circuit = fn term, _depth -> fvar not in term.fvars end
+    short_circuit = fn term, _depth -> not MapSet.member?(term.fvars, fvar) end
 
     transform = fn term, new_args, depth, acc_cache ->
       if term.head == fvar do
@@ -70,7 +70,7 @@ defmodule ShotDs.Stt.Semantics do
            calc_new_max_num(reduced_body.head, reduced_body.args, combined_bvars),
          {:ok, new_tvars} <-
            calc_new_tvars(reduced_body.head, reduced_body.args, combined_bvars) do
-      final_fvars = Enum.uniq(List.delete(fvars, fvar) ++ red_fvars)
+      final_fvars = MapSet.union(MapSet.delete(fvars, fvar), red_fvars)
       new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
 
       wrapped_term = %Term{
@@ -362,9 +362,7 @@ defmodule ShotDs.Stt.Semantics do
 
     update_env = fn _term, env -> env end
 
-    short_circuit = fn term, _env ->
-      Enum.all?(term.tvars, fn tv -> not MapSet.member?(domain, tv) end)
-    end
+    short_circuit = fn term, _env -> MapSet.disjoint?(term.tvars, domain) end
 
     transform = &subst_types_transform(&1, &2, &3, &4, type_subst)
 
@@ -619,7 +617,7 @@ defmodule ShotDs.Stt.Semantics do
            calc_new_max_num(reduced_body.head, reduced_body.args, combined_bvars),
          {:ok, new_tvars} <-
            calc_new_tvars(reduced_body.head, reduced_body.args, combined_bvars) do
-      final_fvars = Enum.uniq(fvars ++ red_fvars)
+      final_fvars = MapSet.union(fvars, red_fvars)
       new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
 
       wrapped_term = %Term{
@@ -691,61 +689,50 @@ defmodule ShotDs.Stt.Semantics do
     end
   end
 
-  defp calc_new_consts(head_decl, arg_ids) do
-    head_consts =
-      if head_decl.kind == :co and head_decl.name not in signature(), do: [head_decl], else: []
+  @dialyzer {:no_opaque, [fold_union: 2, calc_new_consts: 2, calc_new_fvars: 2]}
 
-    Enum.reduce_while(arg_ids, {:ok, []}, fn id, {:ok, acc} ->
+  @spec fold_union([Term.term_id()], (Term.t() -> MapSet.t())) ::
+          {:ok, MapSet.t()} | TF.lookup_error_t()
+  defp fold_union(arg_ids, field_fn) do
+    Enum.reduce_while(arg_ids, {:ok, MapSet.new()}, fn id, {:ok, acc} ->
       case TF.get_term(id) do
-        {:ok, term} -> {:cont, {:ok, [term.consts | acc]}}
+        {:ok, term} -> {:cont, {:ok, MapSet.union(acc, field_fn.(term))}}
         error -> {:halt, error}
       end
     end)
-    |> case do
-      {:ok, nested_consts} -> {:ok, Enum.uniq(head_consts ++ List.flatten(nested_consts))}
-      error -> error
+  end
+
+  defp calc_new_consts(head_decl, arg_ids) do
+    head_consts =
+      if head_decl.kind == :co and head_decl.name not in signature(),
+        do: MapSet.new([head_decl]),
+        else: MapSet.new()
+
+    with {:ok, arg_consts} <- fold_union(arg_ids, & &1.consts) do
+      {:ok, MapSet.union(head_consts, arg_consts)}
     end
   end
 
   defp calc_new_fvars(head_decl, arg_ids) do
     head_fvars =
       case head_decl do
-        %Declaration{kind: :fv} -> [head_decl]
-        _ -> []
+        %Declaration{kind: :fv} -> MapSet.new([head_decl])
+        _ -> MapSet.new()
       end
 
-    Enum.reduce_while(arg_ids, {:ok, []}, fn id, {:ok, acc} ->
-      case TF.get_term(id) do
-        {:ok, term} -> {:cont, {:ok, [term.fvars | acc]}}
-        error -> {:halt, error}
-      end
-    end)
-    |> case do
-      {:ok, nested_fvars} -> {:ok, Enum.uniq(head_fvars ++ List.flatten(nested_fvars))}
-      error -> error
+    with {:ok, arg_fvars} <- fold_union(arg_ids, & &1.fvars) do
+      {:ok, MapSet.union(head_fvars, arg_fvars)}
     end
   end
 
   defp calc_new_tvars(head_decl, arg_ids, bvars) do
-    head_tvars = Type.free_type_vars(head_decl.type) |> MapSet.to_list()
-
-    bvar_tvars =
-      Enum.flat_map(bvars, fn bv ->
-        Type.free_type_vars(bv.type) |> MapSet.to_list()
+    after_bvars =
+      Enum.reduce(bvars, Type.free_type_vars(head_decl.type), fn bv, acc ->
+        MapSet.union(acc, Type.free_type_vars(bv.type))
       end)
 
-    Enum.reduce_while(arg_ids, {:ok, []}, fn id, {:ok, acc} ->
-      case TF.get_term(id) do
-        {:ok, term} -> {:cont, {:ok, [term.tvars | acc]}}
-        error -> {:halt, error}
-      end
-    end)
-    |> case do
-      {:ok, nested_tvars} ->
-        {:ok, Enum.uniq(head_tvars ++ bvar_tvars ++ List.flatten(nested_tvars))}
-
-      error ->
-        error
+    with {:ok, arg_tvars} <- fold_union(arg_ids, & &1.tvars) do
+      {:ok, MapSet.union(after_bvars, arg_tvars)}
     end
   end
 end
