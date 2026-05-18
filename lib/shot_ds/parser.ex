@@ -913,7 +913,11 @@ defmodule ShotDs.Parser do
     case parse_poly_type_tokens(rest, ctx.type_vars) do
       {:ok, {type, [{:rparen, _, _} | rest2], final_env}}
       when map_size(final_env) == map_size(ctx.type_vars) ->
-        {:ok, {type, rest2}}
+        if type_contains_term_const?(type, ctx) do
+          {:error, "TH1: parenthesized type arg contains known term-level constants"}
+        else
+          {:ok, {type, rest2}}
+        end
 
       {:ok, {_, [{:rparen, _, _} | _], _}} ->
         {:error, "TH1: parenthesized type arg contains unknown type variables"}
@@ -926,14 +930,32 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_type_arg([{:atom, name, _} | rest], _ctx),
-    do: {:ok, {Type.new(String.to_atom(name)), rest}}
+  defp parse_type_arg([{:atom, name, _} | rest], ctx) do
+    if Context.get_const_scheme(ctx, name) != nil do
+      {:error, "TH1: '#{name}' is a known constant, not a type argument"}
+    else
+      {:ok, {Type.new(String.to_atom(name)), rest}}
+    end
+  end
 
   defp parse_type_arg([{:system, name, _} | rest], _ctx),
     do: {:ok, {Type.new(name |> String.trim_leading("$") |> String.to_atom()), rest}}
 
   defp parse_type_arg(tokens, _ctx),
     do: {:error, "TH1: expected type argument, found #{inspect(tokens)}"}
+
+  defp type_contains_term_const?(%Type{goal: goal, args: args}, ctx) do
+    (is_atom(goal) and atom_is_term_const?(ctx, Atom.to_string(goal))) or
+      Enum.any?(args, &type_contains_term_const?(&1, ctx))
+  end
+
+  defp atom_is_term_const?(ctx, name) do
+    case Context.get_const_scheme(ctx, name) do
+      nil -> false
+      %TypeScheme{body: %Type{goal: :tType}} -> false
+      _ -> true
+    end
+  end
 
   defp parse_quantifier(type_key, [{:lbracket, _, off} | rest], ctx, subst) do
     with {:ok, {vars, updated_tvar_env, [{:rbracket, _, _}, {:colon, _, _} | body_tokens]}} <-
