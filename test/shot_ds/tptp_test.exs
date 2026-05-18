@@ -97,6 +97,33 @@ defmodule ShotDs.TptpTest do
     assert {"cj", _} = problem.conjecture
   end
 
+  test "included file can use types declared in the main file before the include" do
+    dir = mk_tmp_dir()
+    prev = System.get_env("TPTP_ROOT")
+    on_exit(fn -> reset_env("TPTP_ROOT", prev) end)
+
+    System.put_env("TPTP_ROOT", dir)
+
+    File.write!(
+      Path.join(dir, "typed_inc.p"),
+      "thf(f_t,type,f:alpha>$o). thf(ax_f,axiom,![X:alpha]:(f @ X))."
+    )
+
+    problems_dir = Path.join(dir, "Problems")
+    domain_dir = Path.join(problems_dir, "TST")
+    File.mkdir_p!(domain_dir)
+
+    File.write!(
+      Path.join(domain_dir, "TSTtyped.p"),
+      "thf(alpha_t,type,alpha:$tType). include('typed_inc.p')."
+    )
+
+    assert {:ok, problem} = Tptp.parse_tptp_file("TSTtyped.p")
+    assert Map.has_key?(problem.types, "alpha")
+    assert Map.has_key?(problem.types, "f")
+    assert Enum.any?(problem.axioms, fn {name, _} -> name == "ax_f" end)
+  end
+
   test "parse_tptp_string/2 reports cyclic include" do
     assert {:error, msg} = Tptp.parse_tptp_string("include('self.p').", "self.p")
     assert String.contains?(msg, "Cyclic import")

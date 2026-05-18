@@ -75,7 +75,9 @@ defmodule ShotDs.Tptp do
   def parse_tptp_string(content, path \\ "memory") when is_binary(content) and is_binary(path) do
     case Lexer.tokenize(content) do
       {:ok, tokens, "", _, _, _} ->
-        process_tokens(tokens, %Problem{path: path})
+        with {:ok, inlined_tokens, include_paths} <- inline_includes(tokens, MapSet.new([path])) do
+          process_tokens(inlined_tokens, %Problem{path: path, includes: include_paths})
+        end
 
       {:ok, _tokens, unparsed, _, _, _} ->
         {:error, "Lexer failed to parse entire string. Unparsed: #{unparsed}"}
@@ -95,7 +97,8 @@ defmodule ShotDs.Tptp do
   @spec parse_tptp_string!(String.t(), String.t()) :: Problem.t()
   def parse_tptp_string!(content, path \\ "memory") when is_binary(content) and is_binary(path) do
     with {:ok, tokens, "", _, _, _} <- Lexer.tokenize(content),
-         {:ok, problem} <- process_tokens(tokens, %Problem{path: path}) do
+         {:ok, inlined_tokens, include_paths} <- inline_includes(tokens, MapSet.new([path])),
+         {:ok, problem} <- process_tokens(inlined_tokens, %Problem{path: path, includes: include_paths}) do
       problem
     else
       {:ok, _tokens, unparsed, _, _, _} ->
@@ -156,33 +159,6 @@ defmodule ShotDs.Tptp do
   defp resolve_path!(problem, :custom), do: problem
 
   defp process_tokens([], problem), do: {:ok, problem}
-
-  defp process_tokens(
-         [
-           {:keyword, :include, _},
-           {:lparen, _, _},
-           {:distinct, raw_file_path, _},
-           {:rparen, _, _},
-           {:dot, _, _} | rest
-         ],
-         problem
-       ) do
-    file_path = String.trim(raw_file_path, "'")
-
-    if file_path == problem.path do
-      {:error, "TPTP Parser Error: Cyclic import of #{file_path}"}
-    else
-      case parse_tptp_file(file_path, :tptp_relative) do
-        {:ok, included_problem} ->
-          problem
-          |> merge_problems(included_problem)
-          |> then(&process_tokens(rest, &1))
-
-        error ->
-          error
-      end
-    end
-  end
 
   defp process_tokens(
          [
@@ -303,15 +279,54 @@ defmodule ShotDs.Tptp do
     end)
   end
 
-  defp merge_problems(main, included) do
-    %{
-      main
-      | types: Map.merge(main.types, included.types),
-        axioms: main.axioms ++ included.axioms,
-        definitions: Map.merge(main.definitions, included.definitions),
-        includes: main.includes ++ [included.path | included.includes]
-    }
+  defp inline_includes(tokens, visited) do
+    do_inline(tokens, visited, [], [])
   end
+
+  defp do_inline([], _visited, tok_acc, path_acc),
+    do: {:ok, Enum.reverse(tok_acc), Enum.reverse(path_acc)}
+
+  defp do_inline(
+         [
+           {:keyword, :include, _},
+           {:lparen, _, _},
+           {:distinct, raw_file_path, _},
+           {:rparen, _, _},
+           {:dot, _, _} | rest
+         ],
+         visited,
+         tok_acc,
+         path_acc
+       ) do
+    file_path = String.trim(raw_file_path, "'")
+
+    if MapSet.member?(visited, file_path) do
+      {:error, "TPTP Parser Error: Cyclic import of #{file_path}"}
+    else
+      new_visited = MapSet.put(visited, file_path)
+
+      with {:ok, resolved_path} <- resolve_path(file_path, :tptp_relative),
+           {:ok, content} <- File.read(resolved_path),
+           {:ok, file_tokens, "", _, _, _} <- Lexer.tokenize(content),
+           {:ok, inlined_tokens, sub_paths} <- do_inline(file_tokens, new_visited, [], []) do
+        new_tok_acc = Enum.reverse(inlined_tokens) ++ tok_acc
+        new_path_acc = Enum.reverse([resolved_path | sub_paths]) ++ path_acc
+        do_inline(rest, new_visited, new_tok_acc, new_path_acc)
+      else
+        {:ok, _, unparsed, _, _, _} ->
+          {:error, "Lexer failed to tokenize included file #{file_path}. Unparsed: #{unparsed}"}
+
+        {:error, reason} when is_binary(reason) ->
+          {:error, reason}
+
+        {:error, posix} ->
+          {:error, "Could not read included file #{file_path}: #{inspect(posix)}"}
+      end
+    end
+  end
+
+  defp do_inline([token | rest], visited, tok_acc, path_acc),
+    do: do_inline(rest, visited, [token | tok_acc], path_acc)
 
   ##############################################################################
   # UNPARSING: TPTP THF PROBLEM FORMAT
