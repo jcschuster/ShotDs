@@ -551,6 +551,10 @@ defmodule ShotDs.Stt.Semantics do
         {name, {decl, def_id}}
       end)
 
+    unfold_defs_fixpoint(target_id, by_name)
+  end
+
+  defp unfold_defs_fixpoint(target_id, by_name) do
     update_env = fn term, depth -> depth + length(term.bvars) end
 
     short_circuit = fn term, _depth ->
@@ -559,9 +563,13 @@ defmodule ShotDs.Stt.Semantics do
 
     transform = &unfold_transform(&1, &2, &3, &4, by_name)
 
-    case map_term(target_id, 0, update_env, transform, short_circuit) do
-      {:ok, {new_id, _cache}} -> {:ok, new_id}
-      error -> error
+    with {:ok, {new_id, _cache}} <- map_term(target_id, 0, update_env, transform, short_circuit),
+         {:ok, result_term} <- TF.get_term(new_id) do
+      if Enum.any?(result_term.consts, fn c -> Map.has_key?(by_name, c.name) end) do
+        unfold_defs_fixpoint(new_id, by_name)
+      else
+        {:ok, new_id}
+      end
     end
   end
 
