@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:shot_ds, "~> 1.2"}
+  {:shot_ds, "~> 1.2.4"},
+  {:kino, "~> 0.19.0"}
 ])
 ```
 
@@ -21,7 +22,13 @@ def deps do
 end
 ```
 
-**Note**: When parsing files from the TPTP problem library, it is additionally necessary to set up an environment variable `TPTP_ROOT` pointing to its root directory. This also enables parsing dependencies in TPTP files.
+**Note**: When parsing files from the TPTP problem library, it is additionally necessary to set up an environment variable `TPTP_ROOT` pointing to its root directory. This also enables parsing dependencies in TPTP files. This can also be done from a Livebook cell as follows:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+System.put_env("TPTP_ROOT", "/path/to/tptp/root/directory")
+```
 
 ## Core Concepts and Architecture
 
@@ -103,6 +110,86 @@ with_context(~e[X : $o, p : $o>$i], fn ->
 end)
 ```
 
+## LaTeX Pretty-Printing
+
+The module `ShotDs.Util.LatexFormatter` renders HOL objects as LaTeX. Types are printed as subscripts; logical constants of the signature ($\top, \bot, \neg, \wedge, \vee, \supset, \equiv, =, \forall, \exists$) print as their standard LaTeX symbols with no type annotation.
+
+Below we define a small helper that returns a `Kino.Markdown` showing both the LaTeX source and its rendered form, so Livebook can typeset the output.
+
+```elixir
+alias ShotDs.Util.LatexFormatter, as: LF
+
+show = fn latex ->
+  Kino.Markdown.new("`#{latex}`\n\n$$#{latex}$$")
+end
+
+# Arrow types are right-associative; the LHS is parenthesised when itself an arrow.
+Kino.Layout.grid([
+  Type.new(:o, [:i, :i])         |> LF.format!() |> show.(),
+  Type.new(:o, Type.new(:o, :i)) |> LF.format!() |> show.()
+], columns: 2)
+```
+
+Bound variables get freshly reconstructed names drawn from a **type-specific pool** — individuals `X, Y, Z, U, V, W`; propositions and predicates `P, Q, R, S`; relations `R, S, T, U`; functions `F, G, H, K`. All variables are uppercase by TPTP convention; constants are lowercase. Duplicates are disambiguated with a *superscript* (subscripts are reserved for the type annotation).
+
+Function application uses `~` (LaTeX non-breaking space) to keep a head glued to its arguments, and binders are followed by `\,` (thin space).
+
+```elixir
+# Church numeral 2: λ f c. f (f c). f is a function ι → ι, c is an individual.
+church2 =
+  lambda([type_ii(), type_i()], fn f, c ->
+    app(f, app(f, c))
+  end)
+
+church2 |> LF.format!() |> show.()
+```
+
+Quantifiers merge with their bound abstraction and chain across nested binders, so `∀(λx. ∀(λy. x = y))` collapses into a single line:
+
+```elixir
+forall([type_i(), type_i()], fn x, y -> eq(x, y) end)
+|> LF.format!()
+|> show.()
+```
+
+Reconstructed names avoid capture with free variables already appearing in the term. Here the outer name `F` is taken, so the binder picks `G`:
+
+```elixir
+f_free = var("F", type_ii())
+
+lambda(type_ii(), fn g -> app(f_free, app(g, const("a", type_i()))) end)
+|> LF.format!()
+|> show.()
+```
+
+Set `reconstruct_names: false` to see the raw de Bruijn structure. Binders render as $\lambda_{\tau}$ (no name) and references use the `\mathtt` font. Quantifier–binder merging is suppressed in this mode so the constructor structure remains visible.
+
+```elixir
+church2 |> LF.format!(reconstruct_names: false) |> show.()
+```
+
+Other options: `hide_types` drops the subscripts, and `math_mode` wraps the result in `$…$` (`:inline`) or `$$…$$` (`:display`).
+
+```elixir
+Kino.Layout.grid([
+  church2 |> LF.format!(hide_types: true)    |> show.(),
+  church2 |> LF.format!(math_mode: :inline)  |> Kino.Markdown.new()
+])
+```
+
+Substitutions format as well:
+
+```elixir
+alias ShotDs.Data.{Declaration, Substitution}
+
+Substitution.new(
+  Declaration.new_free_var("X", type_i()),
+  const("a", type_i())
+)
+|> LF.format!()
+|> show.()
+```
+
 ## Advanced Utilities
 
 **Error Handling**: Functions that can fail return a tuple `{:ok, result}` or `{:error, reason}` per default. There are "bang" versions (suffixed by `!`) of all functions that either return the result directly or raise an error. [`with`-clauses](https://hexdocs.pm/elixir/Kernel.SpecialForms.html#with/1) offer idiomatic error handling when processing user input and are generally preferred over exceptions:
@@ -169,11 +256,14 @@ a = const("a", type_i())
 b = const("b", type_ii())
 
 x_a = app(x, a)
-x_a |> format!(true) |> IO.puts()
+pp_x_a = x_a |> LF.format!()
 
 s = %Substitution{fvar: TF.get_term!(x).head, term_id: b}
 
-Semantics.subst!(s, x_a) |> format!(true) |> IO.puts()
+pp_b_a = ("(" <> pp_x_a <> ")~" <> LF.format!(s) <> ~S(\Longrightarrow)) <>
+  (Semantics.subst!(s, x_a) |> LF.format!())
+
+Kino.Markdown.new("$\n" <> pp_x_a <> "\n$\n\n$\n" <> pp_b_a <> "\n$")
 ```
 
 **Church Encoding**: `ShotDs.Stt.Numerals` provides an implementation of Church's encoding of natural numbers, adapted to simple types. This can for example be used for benchmarking. Additionally, Church's encoding of Booleans is implemented in the module `ShotDs.Stt.Booleans`.
@@ -181,13 +271,15 @@ Semantics.subst!(s, x_a) |> format!(true) |> IO.puts()
 ```elixir
 import ShotDs.Stt.Numerals
 
-plus(num(5), num(2)) |> format!() |> IO.puts()
+plus(num(5), num(2))
+|> LF.format!(math_mode: :inline) |> Kino.Markdown.new()
 ```
 
 ```elixir
 import ShotDs.Stt.Booleans
 
-b_and(tt(), b_var("P")) |> format!() |> IO.puts()
+b_and(tt(), b_var("P"))
+|> LF.format!(math_mode: :inline) |> Kino.Markdown.new()
 ```
 
 **Traversals and Transformation**: Transformations of terms mostly follow the same scheme. An optimized adaption of the combinators `fold` (`fold_term/2`, `fold_term!/2`) and `map` (`map_term/5`, `map_term!/5`) to the DAG representation of terms is implemented in the module `ShotDs.Util.TermTraversal`. Examples for the usage of these higher-order functions can be found in the source code of the `ShotDs.Stt.Semantics` module or in `ShotDs.Util.Formatter.format_term/2`.
