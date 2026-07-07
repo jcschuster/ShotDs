@@ -160,6 +160,37 @@ defmodule ShotDs.Util.LatexFormatter do
 
   def format!(%Problem{} = p, opts), do: render_problem(p, opts)
 
+  @doc """
+  Runs `fun` with a **LaTeX** alias map active. Unlike
+  `ShotDs.Util.Formatter.with_aliases/2` — whose values go through
+  `escape_name/1` before being spliced into the output — values here
+  are used *verbatim* as LaTeX for the corresponding `reference()`
+  variable name or type goal. That lets callers hand out proper LaTeX
+  identifiers (e.g. `"H^{1}"`, `"\\hat{F}_{2}"`) for fresh metas.
+
+  Falls back through `:hol_aliases` (plain-text nicknames) and finally
+  to the `V_{short_ref}`/`\\tau_{short_ref}` default for any ref not
+  listed in this map. Restores the previous binding on exit.
+
+  Only `LatexFormatter` consults `:hol_latex_aliases` — the plain-text
+  `Formatter` and `Declaration.format/2` ignore it entirely, so the two
+  alias mechanisms don't interfere.
+  """
+  @spec with_latex_aliases(%{reference() => String.t()}, (-> a)) :: a when a: var
+  def with_latex_aliases(aliases, fun) when is_map(aliases) and is_function(fun, 0) do
+    prev = Process.get(:hol_latex_aliases)
+    Process.put(:hol_latex_aliases, aliases)
+
+    try do
+      fun.()
+    after
+      case prev do
+        nil -> Process.delete(:hol_latex_aliases)
+        m -> Process.put(:hol_latex_aliases, m)
+      end
+    end
+  end
+
   ##############################################################################
   # TYPES
   ##############################################################################
@@ -182,9 +213,15 @@ defmodule ShotDs.Util.LatexFormatter do
   defp render_goal(atom) when is_atom(atom), do: "#{@mathrm}{#{Atom.to_string(atom)}}"
 
   defp render_goal(ref) when is_reference(ref) do
-    case Process.get(:hol_aliases, %{}) do
-      %{^ref => nick} -> nick
-      _ -> "#{@tau}_{#{Formatter.short_ref(ref)}}"
+    case Process.get(:hol_latex_aliases, %{}) do
+      %{^ref => latex} when is_binary(latex) ->
+        latex
+
+      _ ->
+        case Process.get(:hol_aliases, %{}) do
+          %{^ref => nick} -> nick
+          _ -> "#{@tau}_{#{Formatter.short_ref(ref)}}"
+        end
     end
   end
 
@@ -214,9 +251,15 @@ defmodule ShotDs.Util.LatexFormatter do
   defp render_var_name(name) when is_binary(name), do: escape_name(name)
 
   defp render_var_name(ref) when is_reference(ref) do
-    case Process.get(:hol_aliases, %{}) do
-      %{^ref => nick} -> escape_name(nick)
-      _ -> "V_{#{Formatter.short_ref(ref)}}"
+    case Process.get(:hol_latex_aliases, %{}) do
+      %{^ref => latex} when is_binary(latex) ->
+        latex
+
+      _ ->
+        case Process.get(:hol_aliases, %{}) do
+          %{^ref => nick} -> escape_name(nick)
+          _ -> "V_{#{Formatter.short_ref(ref)}}"
+        end
     end
   end
 
