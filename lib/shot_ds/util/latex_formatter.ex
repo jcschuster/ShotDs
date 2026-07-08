@@ -169,8 +169,9 @@ defmodule ShotDs.Util.LatexFormatter do
   identifiers (e.g. `"H^{1}"`, `"\\hat{F}_{2}"`) for fresh metas.
 
   Falls back through `:hol_aliases` (plain-text nicknames) and finally
-  to the `V_{short_ref}`/`\\tau_{short_ref}` default for any ref not
-  listed in this map. Restores the previous binding on exit.
+  to the `V^{short_ref}`/`\\mathrm{c}^{short_ref}`/`\\tau_{short_ref}`
+  defaults for any ref not listed in this map (free variable, constant,
+  and type-goal, respectively). Restores the previous binding on exit.
 
   Only `LatexFormatter` consults `:hol_latex_aliases` — the plain-text
   `Formatter` and `Declaration.format/2` ignore it entirely, so the two
@@ -236,7 +237,7 @@ defmodule ShotDs.Util.LatexFormatter do
   defp render_decl(%Declaration{kind: :co, name: name, type: type}, opts) do
     case Map.fetch(@logical, name) do
       {:ok, latex} -> latex
-      :error -> attach_type("#{@mathrm}{#{escape_name(name)}}", type, opts)
+      :error -> attach_type(render_const_name(name), type, opts)
     end
   end
 
@@ -250,7 +251,26 @@ defmodule ShotDs.Util.LatexFormatter do
 
   defp render_var_name(name) when is_binary(name), do: escape_name(name)
 
+  # Anonymous free variable (fresh ref, e.g. γ-instantiation). Disambiguator
+  # goes in a *superscript* so the type subscript added by `attach_type` still
+  # composes into valid LaTeX (`V^{shortref}_{τ}`).
   defp render_var_name(ref) when is_reference(ref) do
+    resolve_ref_name(ref, fn short -> "V^{#{short}}" end)
+  end
+
+  defp render_var_name(n) when is_integer(n), do: Integer.to_string(n)
+
+  # Constants named by refs come from Skolemization (δ-rule). Same
+  # composition trick as for free-var refs; roman font marks the constant.
+  defp render_const_name(name) when is_binary(name),
+    do: "#{@mathrm}{#{escape_name(name)}}"
+
+  defp render_const_name(ref) when is_reference(ref) do
+    resolve_ref_name(ref, fn short -> "#{@mathrm}{c}^{#{short}}" end)
+  end
+
+  # LaTeX alias first, plain nickname second, `default_fun` last.
+  defp resolve_ref_name(ref, default_fun) do
     case Process.get(:hol_latex_aliases, %{}) do
       %{^ref => latex} when is_binary(latex) ->
         latex
@@ -258,12 +278,10 @@ defmodule ShotDs.Util.LatexFormatter do
       _ ->
         case Process.get(:hol_aliases, %{}) do
           %{^ref => nick} -> escape_name(nick)
-          _ -> "V_{#{Formatter.short_ref(ref)}}"
+          _ -> default_fun.(Formatter.short_ref(ref))
         end
     end
   end
-
-  defp render_var_name(n) when is_integer(n), do: Integer.to_string(n)
 
   # LaTeX-escape the small set of characters that would otherwise break math
   # mode. Most identifiers used here are alphanumeric or Unicode operators

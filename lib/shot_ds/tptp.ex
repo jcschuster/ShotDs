@@ -98,7 +98,8 @@ defmodule ShotDs.Tptp do
   def parse_tptp_string!(content, path \\ "memory") when is_binary(content) and is_binary(path) do
     with {:ok, tokens, "", _, _, _} <- Lexer.tokenize(content),
          {:ok, inlined_tokens, include_paths} <- inline_includes(tokens, MapSet.new([path])),
-         {:ok, problem} <- process_tokens(inlined_tokens, %Problem{path: path, includes: include_paths}) do
+         {:ok, problem} <-
+           process_tokens(inlined_tokens, %Problem{path: path, includes: include_paths}) do
       problem
     else
       {:ok, _tokens, unparsed, _, _, _} ->
