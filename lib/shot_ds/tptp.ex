@@ -382,7 +382,7 @@ defmodule ShotDs.Tptp do
 
     axioms_part =
       Enum.map_join(axioms, "\n", fn {name, term_id} ->
-        "thf(#{tptp_atom(name)}, axiom,\n    #{Parser.unparse!(term_id)})."
+        "thf(#{tptp_atom(name)}, axiom,\n    #{unparse_top_level_formula(term_id)})."
       end)
 
     conj_part =
@@ -391,7 +391,7 @@ defmodule ShotDs.Tptp do
           nil
 
         {name, term_id} ->
-          "thf(#{tptp_atom(name)}, conjecture,\n    #{Parser.unparse!(term_id)})."
+          "thf(#{tptp_atom(name)}, conjecture,\n    #{unparse_top_level_formula(term_id)})."
       end
 
     [types_part, defs_part, axioms_part, conj_part]
@@ -407,6 +407,37 @@ defmodule ShotDs.Tptp do
 
   defp tptp_atom(ref) when is_reference(ref),
     do: "c#{:erlang.phash2(ref) |> Integer.to_string(36)}"
+
+  # Renders a top-level formula (axiom or conjecture), implicitly universally
+  # quantifying over the term's free variables so the output is a valid,
+  # self-contained TPTP THF formula.
+  defp unparse_top_level_formula(term_id) do
+    term = TF.get_term!(term_id)
+    body = Parser.unparse!(term_id)
+
+    case Enum.sort_by(MapSet.to_list(term.fvars), &fvar_sort_key/1) do
+      [] ->
+        body
+
+      fvars ->
+        binders =
+          Enum.map_join(fvars, ", ", fn %Declaration{name: name, type: type} ->
+            "#{fvar_binder_name(name)}: #{Parser.unparse_type(type)}"
+          end)
+
+        "![#{binders}]: (#{body})"
+    end
+  end
+
+  defp fvar_binder_name(name) when is_binary(name), do: name
+
+  defp fvar_binder_name(ref) when is_reference(ref),
+    do: "V#{:erlang.phash2(ref) |> Integer.to_string(36)}"
+
+  defp fvar_sort_key(%Declaration{name: name}) when is_binary(name), do: {0, name}
+
+  defp fvar_sort_key(%Declaration{name: name}) when is_reference(name),
+    do: {1, :erlang.phash2(name)}
 
   defp tptp_def_annotation(name) when is_binary(name) do
     if Regex.match?(~r/^[a-z][a-zA-Z0-9_]*$/, name),

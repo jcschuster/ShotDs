@@ -1393,10 +1393,10 @@ defmodule ShotDs.Parser do
   defp do_unparse_atomic(%Declaration{name: name}, _scope) when is_binary(name),
     do: {name, 7}
 
-  defp do_unparse_atomic(%Declaration{name: ref}, _scope) when is_reference(ref) do
+  defp do_unparse_atomic(%Declaration{kind: kind, name: ref}, _scope) when is_reference(ref) do
     case Process.get(:hol_aliases, %{}) do
       %{^ref => nick} -> {nick, 7}
-      _ -> {"V#{:erlang.phash2(ref) |> Integer.to_string(36)}", 7}
+      _ -> {ref_identifier(kind, ref), 7}
     end
   end
 
@@ -1462,12 +1462,23 @@ defmodule ShotDs.Parser do
   defp do_unparse_name(%Declaration{kind: :bv, name: k}, scope), do: Enum.at(scope, k - 1)
   defp do_unparse_name(%Declaration{name: name}, _scope) when is_binary(name), do: name
 
-  defp do_unparse_name(%Declaration{name: ref}, _scope) when is_reference(ref) do
+  defp do_unparse_name(%Declaration{kind: kind, name: ref}, _scope) when is_reference(ref) do
     case Process.get(:hol_aliases, %{}) do
       %{^ref => nick} -> nick
-      _ -> "V#{:erlang.phash2(ref) |> Integer.to_string(36)}"
+      _ -> ref_identifier(kind, ref)
     end
   end
+
+  # THF: identifiers starting with an uppercase letter are variables, those
+  # starting with a lowercase letter are constants/atoms. We keep the two
+  # namespaces disjoint (`V…` for fvars, `c…` for constants) so a fresh
+  # reference stays syntactically well-formed in the output regardless of the
+  # role it plays in the term.
+  defp ref_identifier(:co, ref),
+    do: "c#{:erlang.phash2(ref) |> Integer.to_string(36)}"
+
+  defp ref_identifier(_kind, ref),
+    do: "V#{:erlang.phash2(ref) |> Integer.to_string(36)}"
 
   defp do_unparse_lambda(%Term{bvars: bvars, head: head, args: args}, scope) do
     len = length(scope)
