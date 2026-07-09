@@ -3,7 +3,6 @@ defmodule ShotDs.ParserContextTest do
 
   alias ShotDs.Parser
   alias ShotDs.Data.{Context, Type}
-  require Logger
 
   test "parse_context/1 with empty string returns empty context" do
     {:ok, ctx} = Parser.parse_context("")

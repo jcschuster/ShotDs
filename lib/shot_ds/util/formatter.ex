@@ -162,7 +162,7 @@ defmodule ShotDs.Util.Formatter do
           {:ok, String.t()} | TF.lookup_error_t()
   def format_substitution(%Substitution{fvar: fvar, term_id: term_id}, hide_types \\ true) do
     with {:ok, formatted_term} <- format_term(term_id, hide_types),
-         do: "#{formatted_term} / #{Declaration.format(fvar, hide_types)}"
+         do: "#{Declaration.format(fvar, hide_types)} ↦ #{formatted_term}"
   end
 
   @doc """
@@ -170,7 +170,7 @@ defmodule ShotDs.Util.Formatter do
   """
   @spec format_substitution!(Substitution.t(), boolean()) :: String.t()
   def format_substitution!(%Substitution{fvar: fvar, term_id: term}, hide_types \\ true),
-    do: "#{format_term!(term, hide_types)} / #{Declaration.format(fvar, hide_types)}"
+    do: "#{Declaration.format(fvar, hide_types)} ↦ #{format_term!(term, hide_types)}"
 
   ##############################################################################
   # PROBLEMS

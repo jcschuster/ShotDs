@@ -32,7 +32,7 @@ defmodule ShotDs.Util.FormatterTraversalTest do
 
     rendered = Formatter.format_substitution(subst)
 
-    assert String.contains?(rendered, " /")
+    assert String.contains?(rendered, " ↦ ")
     assert String.contains?(rendered, "a")
     assert String.contains?(rendered, "X")
   end

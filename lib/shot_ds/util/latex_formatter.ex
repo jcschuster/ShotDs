@@ -14,7 +14,7 @@ defmodule ShotDs.Util.LatexFormatter do
       iex> import ShotDs.Hol.Dsl
       iex> import ShotDs.Hol.Definitions
       iex> alias ShotDs.Util.LatexFormatter
-      iex> t = forall(x_i(), &(x_i() &&& &1))
+      iex> t = forall(type_o(), &(true_term() ||| &1))
       ...> # etc.
   """
 
@@ -562,7 +562,7 @@ defmodule ShotDs.Util.LatexFormatter do
   defp render_substitution(%Substitution{fvar: fvar, term_id: term_id}, opts) do
     with {:ok, term_str} <- render_term(term_id, opts) do
       var_str = render_decl(fvar, opts)
-      {:ok, "[#{term_str}~/~#{var_str}]"}
+      {:ok, "[#{var_str} \mapsto #{term_str}]"}
     end
   end
 

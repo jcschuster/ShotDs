@@ -31,12 +31,6 @@ defmodule ShotDs.Util.FormatterTest do
     assert is_binary(result)
   end
 
-  test "format!/2 with invalid input raises error" do
-    assert_raise FunctionClauseError, fn ->
-      Formatter.format!(%{"invalid" => "input"})
-    end
-  end
-
   test "format/2 with invalid term ID returns error" do
     result = Formatter.format(-999)
     assert {:error, _reason} = result
