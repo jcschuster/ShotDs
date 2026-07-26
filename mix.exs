@@ -1,14 +1,14 @@
 defmodule ShotDs.MixProject do
   use Mix.Project
 
-  @version "1.2.6"
+  @version "1.2.7"
   @source_url "https://github.com/jcschuster/ShotDs"
 
   def project do
     [
       app: :shot_ds,
       version: @version,
-      elixir: "~> 1.19",
+      elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       source_url: @source_url,
