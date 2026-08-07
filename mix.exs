@@ -72,6 +72,7 @@ defmodule ShotDs.MixProject do
         ],
         Utilities: [
           ShotDs.Util.Formatter,
+          ShotDs.Util.LatexFormatter,
           ShotDs.Util.TermTraversal,
           ShotDs.Util.TypeInference,
           ShotDs.Util.Lexer

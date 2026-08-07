@@ -562,7 +562,7 @@ defmodule ShotDs.Util.LatexFormatter do
   defp render_substitution(%Substitution{fvar: fvar, term_id: term_id}, opts) do
     with {:ok, term_str} <- render_term(term_id, opts) do
       var_str = render_decl(fvar, opts)
-      {:ok, "[#{var_str} \mapsto #{term_str}]"}
+      {:ok, "[#{var_str} \\mapsto #{term_str}]"}
     end
   end
 
