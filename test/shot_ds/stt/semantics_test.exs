@@ -47,5 +47,26 @@ defmodule ShotDs.Stt.SemanticsTest do
       assert result_term.args == []
       assert result_term.bvars == []
     end
+
+    test "drops free variables that the replacement discards" do
+      io = %Type{goal: :o, args: [@i]}
+
+      # F Y, where F is replaced by the constant function λx. p c
+      f_decl = Declaration.new_free_var("F", io)
+      target_id = TF.make_appl_term(TF.make_term(f_decl), TF.make_free_var_term("Y", @i)) |> ok!()
+
+      body_id =
+        TF.make_appl_term(TF.make_const_term("p", io), TF.make_const_term("c", @i)) |> ok!()
+
+      replacement_id = TF.make_abstr_term(body_id, Declaration.fresh_var(@i)) |> ok!()
+
+      result_id =
+        Semantics.subst!(%Substitution{fvar: f_decl, term_id: replacement_id}, target_id)
+
+      # Y is gone along with the discarded argument, so the result is shared
+      # with the identically shaped term built directly.
+      assert TF.get_term!(result_id).fvars == MapSet.new()
+      assert result_id == body_id
+    end
   end
 end

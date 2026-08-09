@@ -37,7 +37,7 @@ defmodule ShotDs.Stt.Semantics do
 
     transform = fn term, new_args, depth, acc_cache ->
       if term.head == fvar do
-        subst_matched(term, new_args, depth, replacement_id, fvar, acc_cache)
+        subst_matched(term, new_args, depth, replacement_id, acc_cache)
       else
         subst_unmatched(term, new_args, acc_cache)
       end
@@ -49,34 +49,28 @@ defmodule ShotDs.Stt.Semantics do
     end
   end
 
-  defp subst_matched(
-         %Term{fvars: fvars, bvars: bvars},
-         new_args,
-         depth,
-         replacement_id,
-         fvar,
-         acc_cache
-       ) do
+  defp subst_matched(%Term{bvars: bvars}, new_args, depth, replacement_id, acc_cache) do
     shift_cache = Map.get(acc_cache, {:shift_cache, depth}, %{})
 
     with {:ok, {shifted_replacement_id, next_shift_cache}} <-
            shift(replacement_id, depth, 0, shift_cache),
          {:ok, reduced_id} <- TF.fold_apply(shifted_replacement_id, new_args),
-         {:ok, %Term{bvars: red_bvars, fvars: red_fvars} = reduced_body} <-
-           TF.get_term(reduced_id),
+         {:ok, %Term{bvars: red_bvars} = reduced_body} <- TF.get_term(reduced_id),
          shifted_bvars = Enum.map(bvars, fn bv -> %{bv | name: bv.name + length(red_bvars)} end),
          combined_bvars = shifted_bvars ++ red_bvars,
          {:ok, new_max_num} <-
            calc_new_max_num(reduced_body.head, reduced_body.args, combined_bvars),
          {:ok, new_tvars} <-
            calc_new_tvars(reduced_body.head, reduced_body.args, combined_bvars) do
-      final_fvars = MapSet.union(MapSet.delete(fvars, fvar), red_fvars)
       new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
 
+      # `:fvars` is inherited from `reduced_body`: β-reduction via `fold_apply/2`
+      # already computed it exactly, and folding the pre-substitution set back in
+      # would keep variables that the replacement discarded along with their
+      # arguments.
       wrapped_term = %Term{
         reduced_body
         | bvars: combined_bvars,
-          fvars: final_fvars,
           tvars: new_tvars,
           type: new_type,
           max_num: new_max_num
@@ -527,6 +521,11 @@ defmodule ShotDs.Stt.Semantics do
   to the definition body via `subst_types/2` before β-reducing it with the
   occurrence's arguments.
 
+  Matching is one-way: the instance type need not be ground, but its own type
+  variables are rigid and are never instantiated - only the declaration's
+  scheme variables are. An occurrence more general than its declaration is
+  therefore reported as an error rather than unfolded.
+
   Lookup is by constant name: each declaration is keyed in `defs` by its full
   struct, but only its `:name` is consulted at occurrences (since the type at
   each occurrence is the instance, not the polymorphic, type).
@@ -602,7 +601,7 @@ defmodule ShotDs.Stt.Semantics do
   end
 
   defp unfold_at(
-         %Term{head: const_decl, bvars: bvars, fvars: fvars},
+         %Term{head: const_decl, bvars: bvars},
          new_args,
          depth,
          polymorphic_decl,
@@ -611,13 +610,14 @@ defmodule ShotDs.Stt.Semantics do
        ) do
     shift_cache = Map.get(acc_cache, {:shift_cache, depth}, %{})
 
-    with {:ok, type_subst} <- match_decl(polymorphic_decl, const_decl.type),
-         {:ok, instantiated_def_id} <- subst_types(definition_id, type_subst),
+    with {:ok, {scheme_type, scheme_def_id}} <-
+           freshen_scheme(polymorphic_decl.type, definition_id, const_decl.type),
+         {:ok, type_subst} <- match_scheme(scheme_type, const_decl.type),
+         {:ok, instantiated_def_id} <- subst_types(scheme_def_id, type_subst),
          {:ok, {shifted_def_id, next_shift_cache}} <-
            shift(instantiated_def_id, depth, 0, shift_cache),
          {:ok, reduced_id} <- TF.fold_apply(shifted_def_id, new_args),
-         {:ok, %Term{bvars: red_bvars, fvars: red_fvars} = reduced_body} <-
-           TF.get_term(reduced_id),
+         {:ok, %Term{bvars: red_bvars} = reduced_body} <- TF.get_term(reduced_id),
          shifted_bvars =
            Enum.map(bvars, fn bv -> %{bv | name: bv.name + length(red_bvars)} end),
          combined_bvars = shifted_bvars ++ red_bvars,
@@ -625,13 +625,15 @@ defmodule ShotDs.Stt.Semantics do
            calc_new_max_num(reduced_body.head, reduced_body.args, combined_bvars),
          {:ok, new_tvars} <-
            calc_new_tvars(reduced_body.head, reduced_body.args, combined_bvars) do
-      final_fvars = MapSet.union(fvars, red_fvars)
       new_type = Type.new(reduced_body.type, Enum.map(bvars, & &1.type))
 
+      # `:fvars` is inherited from `reduced_body`: β-reduction via `fold_apply/2`
+      # already computed it exactly, and folding the occurrence's pre-unfolding
+      # set back in would keep variables that the definition discarded along
+      # with their arguments.
       wrapped_term = %Term{
         reduced_body
         | bvars: combined_bvars,
-          fvars: final_fvars,
           tvars: new_tvars,
           type: new_type,
           max_num: new_max_num
@@ -645,27 +647,82 @@ defmodule ShotDs.Stt.Semantics do
     end
   end
 
-  # Computes a type substitution σ such that
-  # `apply_subst(polymorphic_decl.type, σ) == instance_type`, restricted to the
-  # free type variables of the polymorphic declaration's stored type.
-  #
-  # The free type variables of `polymorphic_decl.type` are unique references
-  # that don't appear in `instance_type` (which is fully concrete at the
-  # occurrence), so plain unification followed by domain restriction produces
-  # the desired matching substitution.
-  @spec match_decl(Declaration.const_t(), Type.t()) ::
-          {:ok, TypeInference.type_substitution()} | {:error, String.t()}
-  defp match_decl(%Declaration{type: poly_type}, instance_type) do
-    scheme_vars = Type.free_type_vars(poly_type)
+  # Renames the scheme's type variables apart from the occurrence's, so that a
+  # variable shared between the two (which happens whenever a whole TH1 problem
+  # is inferred in one context) cannot be matched against itself. Returns the
+  # renamed scheme type together with the correspondingly renamed definition.
+  @spec freshen_scheme(Type.t(), Term.term_id(), Type.t()) ::
+          {:ok, {Type.t(), Term.term_id()}} | TF.lookup_error_t()
+  defp freshen_scheme(scheme_type, definition_id, instance_type) do
+    clashing =
+      MapSet.intersection(
+        Type.free_type_vars(scheme_type),
+        Type.free_type_vars(instance_type)
+      )
 
-    if MapSet.size(scheme_vars) == 0 do
-      {:ok, %{}}
+    if MapSet.size(clashing) == 0 do
+      {:ok, {scheme_type, definition_id}}
     else
-      case TypeInference.unify(poly_type, instance_type, %{}) do
-        {:ok, subst} -> {:ok, Map.take(subst, MapSet.to_list(scheme_vars))}
-        {:error, _} = err -> err
+      renaming = Map.new(clashing, fn tvar -> {tvar, Type.fresh_type_var()} end)
+
+      with {:ok, renamed_def_id} <- subst_types(definition_id, renaming) do
+        {:ok, {TypeInference.apply_subst(scheme_type, renaming), renamed_def_id}}
       end
     end
+  end
+
+  # Computes the type substitution σ with `apply_subst(scheme_type, σ) ==
+  # instance_type`.
+  #
+  # Matching is one-way: only the scheme's type variables are bound, while the
+  # occurrence's own type variables stay rigid. Unifying the two instead would
+  # also bind the occurrence's variables, and those bindings cannot be applied
+  # to the definition body — silently dropping them leaves the body at a type
+  # the occurrence's arguments do not fit.
+  @spec match_scheme(Type.t(), Type.t()) ::
+          {:ok, TypeInference.type_substitution()} | {:error, String.t()}
+  defp match_scheme(scheme_type, instance_type), do: match_type(scheme_type, instance_type, %{})
+
+  # A shorter argument list on the scheme side is not a mismatch: in the
+  # uncurried representation the surplus instance arguments belong to the
+  # scheme's goal (e.g. `ι → α` matches `ι → ι → o` with `α ↦ ι → o`).
+  @spec match_type(Type.t(), Type.t(), TypeInference.type_substitution()) ::
+          {:ok, TypeInference.type_substitution()} | {:error, String.t()}
+  defp match_type(%Type{args: scheme_args} = scheme, %Type{args: instance_args} = instance, subst)
+       when length(scheme_args) <= length(instance_args) do
+    {shared_args, surplus_args} = Enum.split(instance_args, length(scheme_args))
+
+    with {:ok, next_subst} <- match_args(scheme_args, shared_args, subst) do
+      match_goal(scheme.goal, Type.new(instance.goal, surplus_args), next_subst)
+    end
+  end
+
+  defp match_type(scheme, instance, _subst) do
+    {:error, "Type Error: Cannot match #{scheme} against #{instance}."}
+  end
+
+  defp match_args(scheme_args, instance_args, subst) do
+    Enum.zip(scheme_args, instance_args)
+    |> Enum.reduce_while({:ok, subst}, fn {scheme_arg, instance_arg}, {:ok, acc_subst} ->
+      case match_type(scheme_arg, instance_arg, acc_subst) do
+        {:ok, next_subst} -> {:cont, {:ok, next_subst}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+  end
+
+  defp match_goal(goal, %Type{} = instance, subst) when is_reference(goal) do
+    case Map.fetch(subst, goal) do
+      :error -> {:ok, Map.put(subst, goal, instance)}
+      {:ok, ^instance} -> {:ok, subst}
+      {:ok, bound} -> {:error, "Type Error: Cannot match #{bound} and #{instance}."}
+    end
+  end
+
+  defp match_goal(goal, %Type{goal: goal, args: []}, subst), do: {:ok, subst}
+
+  defp match_goal(goal, instance, _subst) do
+    {:error, "Type Error: Cannot match #{Type.new(goal)} against #{instance}."}
   end
 
   defp subst_decl_type(%Declaration{type: type} = decl, type_subst) do

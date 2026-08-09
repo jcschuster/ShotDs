@@ -327,12 +327,12 @@ defmodule ShotDs.Util.LatexFormatterTest do
   ##############################################################################
 
   describe "substitutions and problems" do
-    test "substitution renders as [term ~/~ var]" do
+    test "substitution renders as [var \\mapsto term]" do
       fvar = Declaration.new_free_var("X", Type.new(:i))
       term_id = Dsl.const("a", Type.new(:i))
       s = Substitution.new(fvar, term_id)
 
-      assert LF.format!(s) == "[X_{\\iota} \mapsto \\mathrm{a}_{\\iota}]"
+      assert LF.format!(s) == "[X_{\\iota} \\mapsto \\mathrm{a}_{\\iota}]"
     end
 
     test "empty problem renders a comment header" do
@@ -384,7 +384,7 @@ defmodule ShotDs.Util.LatexFormatterTest do
       fvar = Declaration.new_free_var("X", Type.new(:i))
       term_id = Dsl.const("a", Type.new(:i))
       assert {:ok, str} = LF.format(Substitution.new(fvar, term_id))
-      assert str == "[X_{\\iota} \mapsto \\mathrm{a}_{\\iota}]"
+      assert str == "[X_{\\iota} \\mapsto \\mathrm{a}_{\\iota}]"
     end
 
     test "format/2 on Problem returns {:ok, string}" do
@@ -647,7 +647,7 @@ defmodule ShotDs.Util.LatexFormatterTest do
       s = Substitution.new(fvar, term_id)
 
       assert LF.format!(s, math_mode: :display) ==
-               "$$[X_{\\iota} \mapsto \\mathrm{a}_{\\iota}]$$"
+               "$$[X_{\\iota} \\mapsto \\mathrm{a}_{\\iota}]$$"
     end
   end
 
