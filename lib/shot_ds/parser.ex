@@ -241,22 +241,12 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_atomic_type([{:system, "$i", _} | rest]), do: {:ok, {Type.new(:i), rest}}
-  defp parse_atomic_type([{:system, "$o", _} | rest]), do: {:ok, {Type.new(:o), rest}}
-
   defp parse_atomic_type([{:system, name, _} | rest]),
-    do: {:ok, {Type.new(name |> String.trim_leading("$") |> String.to_atom()), rest}}
+    do: {:ok, {Type.new(defined_type_name(name)), rest}}
 
-  defp parse_atomic_type([{:atom, name, _} | rest]),
-    do: {:ok, {Type.new(String.to_atom(name)), rest}}
-
-  defp parse_atomic_type([{:distinct, name, _} | rest]) do
-    name
-    |> String.trim("'")
-    |> String.to_atom()
-    |> Type.new()
-    |> then(&{:ok, {&1, rest}})
-  end
+  defp parse_atomic_type([{atom_like, name, _} | rest])
+       when atom_like in [:atom, :distinct, :distinct_object],
+       do: {:ok, {Type.new(String.to_atom(name)), rest}}
 
   defp parse_atomic_type([{:lparen, _, _} | rest]) do
     case parse_type_tokens(rest) do
@@ -270,6 +260,22 @@ defmodule ShotDs.Parser do
     do: {:error, "#{inspect(other)} is not a valid type token."}
 
   defp parse_atomic_type([]), do: {:error, "Cannot parse empty tokens to type."}
+
+  # The `<defined_type>`s of the TPTP BNF. They are always base types, never
+  # type constructors, and they may not be used in term position.
+  @defined_types [:o, :i, :tType, :int, :rat, :real]
+  @defined_type_words ~w($o $oType $i $iType $tType $int $rat $real)
+
+  # `$oType`/`$iType` are the long spellings of the defined types `$o`/`$i`.
+  # Every other `<dollar_word>`/`<dollar_dollar_word>` becomes a base type of
+  # the same name (`$int` → `:int`, `$$rat` → `:rat`).
+  defp defined_type_name("$o"), do: :o
+  defp defined_type_name("$oType"), do: :o
+  defp defined_type_name("$i"), do: :i
+  defp defined_type_name("$iType"), do: :i
+
+  defp defined_type_name(name),
+    do: name |> String.trim_leading("$") |> String.to_atom()
 
   ################################ TYPE SCHEMES ################################
 
@@ -367,6 +373,20 @@ defmodule ShotDs.Parser do
     end
   end
 
+  def parse_type_scheme_tokens([{:lparen, _, _} | [{:forall_type, _, _} | _] = rest]) do
+    case parse_type_scheme_tokens(rest) do
+      {:ok, {scheme, [{:rparen, _, _} | rest2]}} -> {:ok, {scheme, rest2}}
+      {:ok, {_, other}} -> {:error, "Expected ')' after type scheme, found #{inspect(other)}"}
+      {:error, _} = err -> err
+    end
+  end
+
+  def parse_type_scheme_tokens([{:exists_type, _, _} | _]) do
+    {:error,
+     "Type Error: existential type quantification (?*) has no rank-1 " <>
+       "Hindley-Milner counterpart and is not supported."}
+  end
+
   def parse_type_scheme_tokens(tokens) do
     with {:ok, {body_type, rest, _env}} <- parse_poly_type_tokens(tokens, %{}) do
       {:ok, {TypeScheme.generalize(body_type, MapSet.new()), rest}}
@@ -427,6 +447,15 @@ defmodule ShotDs.Parser do
          do: {:ok, {Type.new(rhs, lhs), rest2, env2}}
   end
 
+  # `<thf_xprod_type>` and `<thf_union_type>` are syntactically well-formed TPTP
+  # but have no counterpart in Church's simple type theory, which knows only
+  # base types and function types.
+  defp parse_poly_type_tokens_rest(_lhs, [{:star, _, _} | _], _env),
+    do: {:error, "Type Error: product types (*) are not part of simple type theory."}
+
+  defp parse_poly_type_tokens_rest(_lhs, [{:plus, _, _} | _], _env),
+    do: {:error, "Type Error: union types (+) are not part of simple type theory."}
+
   defp parse_poly_type_tokens_rest(lhs, rest, env), do: {:ok, {lhs, rest, env}}
 
   # Parses an atomic poly type followed by zero or more `@ arg` applications
@@ -445,21 +474,12 @@ defmodule ShotDs.Parser do
 
   defp parse_type_app_chain(acc, tokens, env), do: {:ok, {acc, tokens, env}}
 
-  defp parse_atomic_poly_type([{:system, "$i", _} | rest], env),
-    do: {:ok, {Type.new(:i), rest, env}}
-
-  defp parse_atomic_poly_type([{:system, "$o", _} | rest], env),
-    do: {:ok, {Type.new(:o), rest, env}}
-
   defp parse_atomic_poly_type([{:system, name, _} | rest], env),
-    do: {:ok, {Type.new(name |> String.trim_leading("$") |> String.to_atom()), rest, env}}
+    do: {:ok, {Type.new(defined_type_name(name)), rest, env}}
 
-  defp parse_atomic_poly_type([{:atom, name, _} | rest], env),
-    do: {:ok, {Type.new(String.to_atom(name)), rest, env}}
-
-  defp parse_atomic_poly_type([{:distinct, name, _} | rest], env) do
-    name |> String.trim("'") |> String.to_atom() |> Type.new() |> then(&{:ok, {&1, rest, env}})
-  end
+  defp parse_atomic_poly_type([{atom_like, name, _} | rest], env)
+       when atom_like in [:atom, :distinct, :distinct_object],
+       do: {:ok, {Type.new(String.to_atom(name)), rest, env}}
 
   defp parse_atomic_poly_type([{:var, name, _} | rest], env) do
     {ref, env2} = ensure_type_var_ref(name, env)
@@ -709,6 +729,11 @@ defmodule ShotDs.Parser do
     end
   end
 
+  # `<thf_subtype>` describes a subtyping relation between two atomic types,
+  # which the (unsorted) simple type theory of this library does not model.
+  defp parse_formula_op(_lhs, [{:subtype, _, _} | _], _ctx, _subst),
+    do: {:error, "Syntax Error: subtype declarations (<<) are not supported."}
+
   defp parse_formula_op(lhs, tokens, ctx, subst), do: {:ok, {lhs, tokens, ctx, subst}}
 
   defp parse_disjunction(tokens, ctx, subst) do
@@ -812,9 +837,11 @@ defmodule ShotDs.Parser do
 
   defp parse_unitary(tokens, ctx, subst), do: parse_equality(tokens, ctx, subst)
 
+  # `<identical>` (`==`) forms a `<thf_definition>`; semantically it states that
+  # both sides denote the same object, so it is parsed as an equality.
   defp parse_equality(tokens, ctx, subst) do
     case parse_application(tokens, ctx, subst) do
-      {:ok, {lhs, [{:eq, _, off} | rest], ctx2, subst2}} ->
+      {:ok, {lhs, [{eq_like, _, off} | rest], ctx2, subst2}} when eq_like in [:eq, :identical] ->
         with {:ok, {rhs, rest2, ctx3, s1}} <- parse_application(rest, ctx2, subst2),
              {:ok, s2} <- unify_at(get_pre_type(lhs), get_pre_type(rhs), s1, off) do
           lhs_type = get_pre_type(lhs)
@@ -1166,31 +1193,88 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_atomic([{atom_or_distinct, name, _} | rest], ctx, subst)
-       when atom_or_distinct in [:atom, :distinct] do
-    case Context.get_const_scheme(ctx, name) do
-      %TypeScheme{vars: [_ | _]} = scheme ->
-        {mono_type, fresh_refs} = TypeScheme.instantiate_with_refs(scheme)
-        {:ok, {{:pre_const_poly, name, mono_type, fresh_refs}, rest, ctx, subst}}
-
-      _ ->
-        case Context.get_type(ctx, name) do
-          nil ->
-            new_type = Type.fresh_type_var()
-            ctx2 = Context.put_const(ctx, name, new_type)
-            {:ok, {{:pre_const, name, new_type}, rest, ctx2, subst}}
-
-          type ->
-            {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
-        end
-    end
-  end
+  defp parse_atomic([{atom_like, name, _} | rest], ctx, subst)
+       when atom_like in [:atom, :distinct, :distinct_object],
+       do: parse_constant(name, rest, ctx, subst)
 
   defp parse_atomic([{:system, "$true", _} | rest], ctx, subst),
     do: {:ok, {{:pre_const, "$true", Definitions.type_o()}, rest, ctx, subst}}
 
   defp parse_atomic([{:system, "$false", _} | rest], ctx, subst),
     do: {:ok, {{:pre_const, "$false", Definitions.type_o()}, rest, ctx, subst}}
+
+  # `$ite(C, A, B)` — the defined if-then-else term. It is represented as an
+  # application of a constant `$ite` of type `$o > α > α > α`.
+  defp parse_atomic([{:system, "$ite", _}, {:lparen, _, off} | rest], ctx, subst) do
+    with {:ok, {cond_term, [{:comma, _, _} | rest2], ctx2, s1}} <- parse_formula(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(cond_term), Definitions.type_o(), s1, off),
+         {:ok, {then_term, [{:comma, _, _} | rest3], ctx3, s3}} <- parse_formula(rest2, ctx2, s2),
+         {:ok, {else_term, [{:rparen, _, _} | rest4], ctx4, s4}} <- parse_formula(rest3, ctx3, s3),
+         {:ok, s5} <- unify_at(get_pre_type(then_term), get_pre_type(else_term), s4, off) do
+      alpha = get_pre_type(then_term)
+
+      term =
+        {:pre_app,
+         {:pre_app,
+          {:pre_app, {:pre_const, "$ite", Type.new(alpha, [Definitions.type_o(), alpha, alpha])},
+           cond_term, Type.new(alpha, [alpha, alpha])}, then_term, Type.new(alpha, [alpha])},
+         else_term, alpha}
+
+      {:ok, {term, rest4, ctx4, s5}}
+    else
+      {:ok, {_, remaining, _, _}} ->
+        {:error, "Syntax Error: malformed $ite(...), unexpected #{inspect(remaining)}"}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp parse_atomic([{:system, "$let", _} | _], _ctx, _subst) do
+    {:error, "Syntax Error: $let bindings are not supported; inline the definition instead."}
+  end
+
+  defp parse_atomic([{:system, name, _} | _], _ctx, _subst) when name in @defined_type_words do
+    {:error, "Syntax Error: '#{name}' denotes a type and cannot be used as a term."}
+  end
+
+  # Any other `<dollar_word>`/`<dollar_dollar_word>` denotes a defined or system
+  # constant and is treated like any other constant.
+  defp parse_atomic([{:system, name, _} | rest], ctx, subst),
+    do: parse_constant(name, rest, ctx, subst)
+
+  # `<number>` literals become constants of the corresponding arithmetic type.
+  defp parse_atomic([{number_kind, value, _} | rest], ctx, subst)
+       when number_kind in [:integer, :rational, :real],
+       do: {:ok, {{:pre_const, value, Type.new(number_type(number_kind))}, rest, ctx, subst}}
+
+  # `@@+`/`@@-` are the constant forms of the choice and description operators.
+  defp parse_atomic([{const_kind, name, _} | rest], ctx, subst)
+       when const_kind in [:choice_const, :description_const] do
+    alpha = Type.fresh_type_var()
+    type = Type.new(alpha, [Type.new(:o, [alpha])])
+    {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
+  end
+
+  # `@+[X : α] : body` and `@-[X : α] : body` bind like a lambda and apply the
+  # corresponding choice/description constant to the resulting abstraction.
+  defp parse_atomic([{binder, _, off} | [{:lbracket, _, _} | _] = rest], ctx, subst)
+       when binder in [:choice, :description] do
+    with {:ok, {abs_term, rest2, ctx2, s1}} <- parse_lambda(rest, ctx, subst),
+         alpha = Type.fresh_type_var(),
+         pred_type = Type.new(:o, [alpha]),
+         {:ok, s2} <- unify_at(get_pre_type(abs_term), pred_type, s1, off) do
+      name = if binder == :choice, do: "@@+", else: "@@-"
+      const = {:pre_const, name, Type.new(alpha, [pred_type])}
+      {:ok, {{:pre_app, const, abs_term, alpha}, rest2, ctx2, s2}}
+    end
+  end
+
+  defp parse_atomic([{:lbracket, _, _} | _], _ctx, _subst) do
+    {:error,
+     "Syntax Error: tuples ([...]) and sequents (-->) have no counterpart in " <>
+       "simple type theory and are not supported."}
+  end
 
   defp parse_atomic([{:eq, _, _} | rest], ctx, subst) do
     alpha = Type.fresh_type_var()
@@ -1270,6 +1354,31 @@ defmodule ShotDs.Parser do
     {:error, "Syntax Error: Unexpected end of input."}
   end
 
+  # Looks a constant up in the context, instantiating polymorphic schemes and
+  # assigning a fresh type variable to constants that are not declared yet.
+  defp parse_constant(name, rest, ctx, subst) do
+    case Context.get_const_scheme(ctx, name) do
+      %TypeScheme{vars: [_ | _]} = scheme ->
+        {mono_type, fresh_refs} = TypeScheme.instantiate_with_refs(scheme)
+        {:ok, {{:pre_const_poly, name, mono_type, fresh_refs}, rest, ctx, subst}}
+
+      _ ->
+        case Context.get_type(ctx, name) do
+          nil ->
+            new_type = Type.fresh_type_var()
+            ctx2 = Context.put_const(ctx, name, new_type)
+            {:ok, {{:pre_const, name, new_type}, rest, ctx2, subst}}
+
+          type ->
+            {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
+        end
+    end
+  end
+
+  defp number_type(:integer), do: :int
+  defp number_type(:rational), do: :rat
+  defp number_type(:real), do: :real
+
   ##############################################################################
   # UNPARSING: HOL → TPTP THF
   ##############################################################################
@@ -1301,7 +1410,7 @@ defmodule ShotDs.Parser do
   @spec unparse_type(Type.t()) :: String.t()
   def unparse_type(%Type{goal: goal, args: []}), do: unparse_type_atom(goal)
 
-  def unparse_type(%Type{goal: goal, args: args}) when goal in [:o, :i, :tType] do
+  def unparse_type(%Type{goal: goal, args: args}) when goal in @defined_types do
     arg_strs = Enum.map(args, &unparse_type_fn_arg/1)
     Enum.join(arg_strs ++ [unparse_type_atom(goal)], " > ")
   end
@@ -1327,7 +1436,7 @@ defmodule ShotDs.Parser do
 
   # --- Type helpers ---
 
-  defp unparse_type_fn_arg(%Type{goal: g, args: [_ | _]} = t) when g in [:o, :i, :tType],
+  defp unparse_type_fn_arg(%Type{goal: g, args: [_ | _]} = t) when g in @defined_types,
     do: "(#{unparse_type(t)})"
 
   defp unparse_type_fn_arg(t), do: unparse_type(t)
@@ -1335,9 +1444,11 @@ defmodule ShotDs.Parser do
   defp unparse_type_tc_arg(%Type{args: [_ | _]} = t), do: "(#{unparse_type(t)})"
   defp unparse_type_tc_arg(t), do: unparse_type(t)
 
-  defp unparse_type_atom(:o), do: "$o"
-  defp unparse_type_atom(:i), do: "$i"
-  defp unparse_type_atom(:tType), do: "$tType"
+  # The TPTP `<defined_type>`s round-trip back to their `$`-prefixed spelling;
+  # every other base type is a user-declared `<type_constant>`.
+  defp unparse_type_atom(a) when a in @defined_types,
+    do: "$" <> Atom.to_string(a)
+
   defp unparse_type_atom(a) when is_atom(a), do: Atom.to_string(a)
 
   defp unparse_type_atom(ref) when is_reference(ref) do

@@ -99,6 +99,17 @@ well as the polymorphic TH1 (Hindley-Milner type system) is implemented with two
 different entry points. All connectives and features in TH0 are supported.
 Additionally, full type inference is implemented.
 
+The accepted language follows the THF fragment of the
+[TPTP syntax BNF](https://tptp.org/UserDocs/TPTPLanguage/SyntaxBNF.html):
+annotated formulas with arbitrary names, roles and annotations, type
+declarations in plain and parenthesised form, includes with formula selection,
+and the full lexical layer (block comments, quoted words with escapes, distinct
+objects, `$`- and `$$`-words, and number literals). Constructs without a
+counterpart in simple type theory — tuples, sequents, subtypes, product and
+union types, `?*` and `$let` — are rejected with a descriptive error. The
+[`ShotDs.Tptp`](https://hexdocs.pm/shot_ds/ShotDs.Tptp.html) documentation
+lists the coverage in full.
+
 The module [`ShotDs.Parser`](https://hexdocs.pm/shot_ds/ShotDs.Parser.html)
 handles simple formula strings such as `"?[X : $o]: X => $true"`.
 

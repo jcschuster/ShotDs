@@ -5,6 +5,34 @@ defmodule ShotDs.Tptp do
 
   For reference, the TH0 language is defined in
   https://doi.org/10.1007/s10817-017-9407-7.
+
+  ## Coverage of the TPTP syntax BNF
+
+  The parser accepts the THF fragment of the TPTP syntax BNF
+  (https://tptp.org/UserDocs/TPTPLanguage/SyntaxBNF.html), including
+
+  - `<thf_annotated>` with an arbitrary `<name>` (`<atomic_word>` or
+    `<integer>`), any `<formula_role>` — also in its `<lower_word>-<general_term>`
+    form — and optional `<annotations>`, which are accepted and discarded;
+  - `<thf_atom_typing>` in both its plain and its (arbitrarily nested)
+    parenthesised form;
+  - `<include>` with an optional `<formula_selection>`, applied recursively;
+  - `<th1_quantified_type>` (`!>`), type application, `$ite`, the choice and
+    description binders `@+`/`@-` together with their constant forms
+    `@@+`/`@@-`, `@=`, and `<identical>` (`==`), which is read as an equality;
+  - the full lexical layer: line and block comments, `<single_quoted>` words
+    with escapes, `<distinct_object>`s, `<dollar_word>`s and
+    `<dollar_dollar_word>`s, and `<integer>`/`<rational>`/`<real>` literals,
+    which become constants of type `$int`/`$rat`/`$real`.
+
+  Some TPTP constructs have no counterpart in Church's simple type theory and
+  are rejected with a descriptive error rather than silently mis-parsed:
+  `<thf_tuple>`, `<thf_sequent>`, `<thf_subtype>`, `<thf_xprod_type>`,
+  `<thf_union_type>`, `<th1_quantified_type>` with `?*`, and `$let`.
+
+  Formulas whose role carries no logical content (`plain`, `interpretation`,
+  `unknown`, and any unrecognised `<lower_word>`) are parsed — so that syntax
+  and type errors still surface — but are not stored in the `ShotDs.Data.Problem`.
   """
 
   alias ShotDs.Data.{Context, Problem, Declaration, Term, Type, TypeScheme}
@@ -159,21 +187,38 @@ defmodule ShotDs.Tptp do
 
   defp resolve_path!(problem, :custom), do: problem
 
+  # <thf_annotated> ::= thf(<name>,<formula_role>,<thf_formula><annotations>).
+  # <name>          ::= <atomic_word> | <integer>
+  @role_names %{
+    "axiom" => :axiom,
+    "hypothesis" => :hypothesis,
+    "definition" => :definition,
+    "assumption" => :assumption,
+    "lemma" => :lemma,
+    "theorem" => :theorem,
+    "corollary" => :corollary,
+    "conjecture" => :conjecture,
+    "negated_conjecture" => :negated_conjecture,
+    "plain" => :plain,
+    "type" => :type,
+    "interpretation" => :interpretation,
+    "unknown" => :unknown
+  }
+
   defp process_tokens([], problem), do: {:ok, problem}
 
   defp process_tokens(
          [
            {:keyword, :thf, _},
            {:lparen, _, _},
-           {atom_or_distinct, name, _},
-           {:comma, _, _},
-           {:role, role, _},
+           {name_kind, name, _},
            {:comma, _, _} | rest
          ],
          problem
        )
-       when atom_or_distinct in [:atom, :distinct] do
-    with {:ok, formula_tokens, remaining_tokens} <- extract_formula(rest),
+       when name_kind in [:atom, :distinct, :distinct_object, :integer] do
+    with {:ok, {role, rest_after_role}} <- extract_role(rest),
+         {:ok, formula_tokens, remaining_tokens} <- extract_formula(rest_after_role),
          {:ok, new_problem} <- handle_thf_role(role, name, formula_tokens, problem) do
       process_tokens(remaining_tokens, new_problem)
     end
@@ -181,6 +226,18 @@ defmodule ShotDs.Tptp do
 
   defp process_tokens([{token_type, value, _offset} | _], _problem) do
     {:error, "Unexpected token: '#{value}' (#{inspect(token_type)})"}
+  end
+
+  # <formula_role> ::= <lower_word> | <lower_word>-<general_term>
+  # The optional sub-role carries no logical content and is skipped.
+  defp extract_role([{:atom, role, _} | rest]) do
+    with {:ok, rest_after_suffix} <- skip_to_entry_comma(rest, 0) do
+      {:ok, {Map.get(@role_names, role, :plain), rest_after_suffix}}
+    end
+  end
+
+  defp extract_role(tokens) do
+    {:error, "Syntax Error: expected a formula role, found #{inspect(Enum.take(tokens, 1))}"}
   end
 
   defp handle_thf_role(:type, _name, formula_tokens, problem) do
@@ -217,7 +274,7 @@ defmodule ShotDs.Tptp do
   end
 
   defp update_problem_statements(problem, role, name, term_id)
-       when role in [:axiom, :hypothesis, :lemma, :assumption] do
+       when role in [:axiom, :hypothesis, :lemma, :assumption, :theorem, :corollary] do
     {:ok, %{problem | axioms: problem.axioms ++ [{name, term_id}]}}
   end
 
@@ -231,28 +288,76 @@ defmodule ShotDs.Tptp do
 
   defp update_problem_statements(problem, _role, _name, _term_id), do: {:ok, problem}
 
+  # Splits off the <thf_formula>, discarding the optional <annotations>
+  # (`,<source><optional_info>`) that may follow it.
   defp extract_formula(tokens), do: split_at_entry_end(tokens, 0, [])
 
   defp split_at_entry_end([{:rparen, _, _}, {:dot, _, _} | rest], 0, acc),
     do: {:ok, Enum.reverse(acc), rest}
 
+  defp split_at_entry_end([{:comma, _, _} | rest], 0, acc) do
+    with {:ok, remaining} <- skip_to_entry_end(rest, 0) do
+      {:ok, Enum.reverse(acc), remaining}
+    end
+  end
+
   defp split_at_entry_end([], _depth, _acc) do
     {:error, "Unexpected end of file. Missing ' thf( ... ). ' closing sequence."}
   end
 
-  defp split_at_entry_end([{:lparen, _, _} = t | rest], depth, acc),
-    do: split_at_entry_end(rest, depth + 1, [t | acc])
+  defp split_at_entry_end([{open, _, _} = t | rest], depth, acc)
+       when open in [:lparen, :lbracket],
+       do: split_at_entry_end(rest, depth + 1, [t | acc])
 
-  defp split_at_entry_end([{:rparen, _, _} = t | rest], depth, acc),
-    do: split_at_entry_end(rest, depth - 1, [t | acc])
+  defp split_at_entry_end([{close, _, _} = t | rest], depth, acc)
+       when close in [:rparen, :rbracket],
+       do: split_at_entry_end(rest, depth - 1, [t | acc])
 
   defp split_at_entry_end([t | rest], depth, acc),
     do: split_at_entry_end(rest, depth, [t | acc])
 
+  # Discards tokens up to (and including) the comma ending the current field.
+  defp skip_to_entry_comma([{:comma, _, _} | rest], 0), do: {:ok, rest}
+
+  defp skip_to_entry_comma([], _depth),
+    do: {:error, "Unexpected end of file inside a ' thf( ... ). ' entry."}
+
+  defp skip_to_entry_comma([{open, _, _} | rest], depth) when open in [:lparen, :lbracket],
+    do: skip_to_entry_comma(rest, depth + 1)
+
+  defp skip_to_entry_comma([{close, _, _} | rest], depth) when close in [:rparen, :rbracket],
+    do: skip_to_entry_comma(rest, depth - 1)
+
+  defp skip_to_entry_comma([_ | rest], depth), do: skip_to_entry_comma(rest, depth)
+
+  # Discards tokens up to (and including) the ' ). ' closing the current entry.
+  defp skip_to_entry_end([{:rparen, _, _}, {:dot, _, _} | rest], 0), do: {:ok, rest}
+
+  defp skip_to_entry_end([], _depth),
+    do: {:error, "Unexpected end of file. Missing ' thf( ... ). ' closing sequence."}
+
+  defp skip_to_entry_end([{open, _, _} | rest], depth) when open in [:lparen, :lbracket],
+    do: skip_to_entry_end(rest, depth + 1)
+
+  defp skip_to_entry_end([{close, _, _} | rest], depth) when close in [:rparen, :rbracket],
+    do: skip_to_entry_end(rest, depth - 1)
+
+  defp skip_to_entry_end([_ | rest], depth), do: skip_to_entry_end(rest, depth)
+
   # --- Type & Context Helpers ---
 
+  # <thf_atom_typing> ::= <typeable_atom> : <thf_top_level_type>
+  #                     | (<thf_atom_typing>)
+  # The parenthesised form may be nested arbitrarily deep.
+  defp parse_type_decl([{:lparen, _, _} | rest] = tokens) do
+    case List.pop_at(rest, -1) do
+      {{:rparen, _, _}, inner} -> parse_type_decl(inner)
+      _ -> {:error, "Syntax Error: unbalanced parentheses in #{inspect(tokens)}."}
+    end
+  end
+
   defp parse_type_decl([{atom_or_distinct, name, _}, {:colon, _, _} | type_tokens])
-       when atom_or_distinct in [:atom, :distinct] do
+       when atom_or_distinct in [:atom, :distinct, :distinct_object] do
     if match?([{:system, "$tType", _}], type_tokens) do
       {:ok, {name, :base_type}}
     else
@@ -262,6 +367,10 @@ defmodule ShotDs.Tptp do
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  defp parse_type_decl(tokens) do
+    {:error, "Syntax Error: #{inspect(tokens)} is not a valid type declaration."}
   end
 
   defp build_context(problem) do
@@ -287,30 +396,29 @@ defmodule ShotDs.Tptp do
   defp do_inline([], _visited, tok_acc, path_acc),
     do: {:ok, Enum.reverse(tok_acc), Enum.reverse(path_acc)}
 
+  # <include> ::= include(<file_name><formula_selection>).
   defp do_inline(
          [
            {:keyword, :include, _},
            {:lparen, _, _},
-           {:distinct, raw_file_path, _},
-           {:rparen, _, _},
-           {:dot, _, _} | rest
+           {:distinct, file_path, _} | after_file_name
          ],
          visited,
          tok_acc,
          path_acc
        ) do
-    file_path = String.trim(raw_file_path, "'")
-
     if MapSet.member?(visited, file_path) do
       {:error, "TPTP Parser Error: Cyclic import of #{file_path}"}
     else
       new_visited = MapSet.put(visited, file_path)
 
-      with {:ok, resolved_path} <- resolve_path(file_path, :tptp_relative),
+      with {:ok, {selection, rest}} <- parse_formula_selection(after_file_name),
+           {:ok, resolved_path} <- resolve_path(file_path, :tptp_relative),
            {:ok, content} <- File.read(resolved_path),
            {:ok, file_tokens, "", _, _, _} <- Lexer.tokenize(content),
-           {:ok, inlined_tokens, sub_paths} <- do_inline(file_tokens, new_visited, [], []) do
-        new_tok_acc = Enum.reverse(inlined_tokens) ++ tok_acc
+           {:ok, inlined_tokens, sub_paths} <- do_inline(file_tokens, new_visited, [], []),
+           {:ok, selected_tokens} <- select_formulas(inlined_tokens, selection) do
+        new_tok_acc = Enum.reverse(selected_tokens) ++ tok_acc
         new_path_acc = Enum.reverse([resolved_path | sub_paths]) ++ path_acc
         do_inline(rest, new_visited, new_tok_acc, new_path_acc)
       else
@@ -328,6 +436,61 @@ defmodule ShotDs.Tptp do
 
   defp do_inline([token | rest], visited, tok_acc, path_acc),
     do: do_inline(rest, visited, [token | tok_acc], path_acc)
+
+  # <formula_selection> ::= ,[<name_list>] | <nothing>
+  defp parse_formula_selection([{:rparen, _, _}, {:dot, _, _} | rest]), do: {:ok, {:all, rest}}
+
+  defp parse_formula_selection([{:comma, _, _}, {:lbracket, _, _} | rest]),
+    do: parse_name_list(rest, [])
+
+  defp parse_formula_selection(tokens),
+    do: {:error, "Syntax Error: malformed include directive at #{inspect(Enum.take(tokens, 3))}"}
+
+  defp parse_name_list([{:rbracket, _, _}, {:rparen, _, _}, {:dot, _, _} | rest], acc),
+    do: {:ok, {Enum.reverse(acc), rest}}
+
+  defp parse_name_list([{kind, name, _}, {:comma, _, _} | rest], acc)
+       when kind in [:atom, :distinct, :distinct_object, :integer],
+       do: parse_name_list(rest, [name | acc])
+
+  defp parse_name_list([{kind, name, _} | rest], acc)
+       when kind in [:atom, :distinct, :distinct_object, :integer],
+       do: parse_name_list(rest, [name | acc])
+
+  defp parse_name_list(tokens, _acc),
+    do: {:error, "Syntax Error: malformed include selection at #{inspect(Enum.take(tokens, 3))}"}
+
+  # Keeps only those statements of an included file whose <name> was selected.
+  defp select_formulas(tokens, :all), do: {:ok, tokens}
+
+  defp select_formulas(tokens, names), do: select_statements(tokens, names, [])
+
+  defp select_statements([], _names, acc), do: {:ok, Enum.reverse(acc)}
+
+  defp select_statements([_, _, {_kind, name, _} | _] = tokens, names, acc) do
+    with {:ok, statement, rest} <- take_statement(tokens, 0, []) do
+      if name in names,
+        do: select_statements(rest, names, Enum.reverse(statement, acc)),
+        else: select_statements(rest, names, acc)
+    end
+  end
+
+  defp select_statements(tokens, _names, _acc),
+    do: {:error, "Syntax Error: malformed statement in included file: #{inspect(tokens)}"}
+
+  defp take_statement([{:rparen, _, _} = r, {:dot, _, _} = d | rest], 1, acc),
+    do: {:ok, Enum.reverse([d, r | acc]), rest}
+
+  defp take_statement([], _depth, _acc),
+    do: {:error, "Unexpected end of file inside an included statement."}
+
+  defp take_statement([{open, _, _} = t | rest], depth, acc) when open in [:lparen, :lbracket],
+    do: take_statement(rest, depth + 1, [t | acc])
+
+  defp take_statement([{close, _, _} = t | rest], depth, acc) when close in [:rparen, :rbracket],
+    do: take_statement(rest, depth - 1, [t | acc])
+
+  defp take_statement([t | rest], depth, acc), do: take_statement(rest, depth, [t | acc])
 
   ##############################################################################
   # UNPARSING: TPTP THF PROBLEM FORMAT

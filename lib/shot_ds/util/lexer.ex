@@ -10,11 +10,21 @@ defmodule ShotDs.Util.Lexer do
   the position of the first byte of the token in the original input string.
   Downstream parsers use this to report the position of type errors.
 
-  ## Examples
+  The token layer follows the lexical rules of the TPTP syntax BNF
+  (https://tptp.org/UserDocs/TPTPLanguage/SyntaxBNF.html):
 
-      iex> {:ok, tokens, "", _, _, _} = tokenize("A & B")
-      iex> tokens
-      [{:var "A", 0}, {:and, "&", 2}, {:var, "B", 4}]
+  | BNF rule                                | token type                         |
+  | --------------------------------------- | ---------------------------------- |
+  | `<lower_word>`                          | `:atom` (or `:keyword`)            |
+  | `<upper_word>`                          | `:var`                             |
+  | `<single_quoted>`                       | `:distinct` (an `<atomic_word>`)   |
+  | `<distinct_object>` (`"…"`)             | `:distinct_object`                 |
+  | `<dollar_word>`, `<dollar_dollar_word>` | `:system`                          |
+  | `<integer>`, `<rational>`, `<real>`     | `:integer`, `:rational`, `:real`   |
+  | `<comment_line>`, `<comment_block>`     | ignored                            |
+
+  Escape sequences (`\\'`, `\\"`, `\\\\`) inside quoted tokens are resolved, and
+  the surrounding quotes are stripped from the token value.
   """
 
   import NimbleParsec
@@ -29,30 +39,24 @@ defmodule ShotDs.Util.Lexer do
 
   whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1) |> ignore()
 
-  comment = string("%") |> concat(ascii_string([not: ?\n], min: 0)) |> ignore()
+  comment_line = string("%") |> concat(ascii_string([not: ?\n], min: 0)) |> ignore()
+
+  comment_block =
+    string("/*")
+    |> repeat(lookahead_not(string("*/")) |> utf8_char([]))
+    |> string("*/")
+    |> ignore()
 
   @keywords %{
     "include" => :include,
     "thf" => :thf
   }
 
-  @roles %{
-    "type" => :type,
-    "axiom" => :axiom,
-    "definition" => :definition,
-    "conjecture" => :conjecture,
-    "negated_conjecture" => :negated_conjecture,
-    "lemma" => :lemma,
-    "hypothesis" => :hypothesis,
-    "assumption" => :assumption
-  }
-
   @doc false
   def categorize_atom(name) do
-    cond do
-      Map.has_key?(@keywords, name) -> {:keyword, @keywords[name]}
-      Map.has_key?(@roles, name) -> {:role, @roles[name]}
-      true -> {:atom, name}
+    case Map.fetch(@keywords, name) do
+      {:ok, keyword} -> {:keyword, keyword}
+      :error -> {:atom, name}
     end
   end
 
@@ -62,9 +66,60 @@ defmodule ShotDs.Util.Lexer do
     {rest, [{type, value, start}], context}
   end
 
+  # Quoted tokens carry their raw byte length (quotes and escapes included) so
+  # that the reported offset stays exact even though the token value is the
+  # unescaped content.
+  @doc false
+  def attach_raw_offset(rest, [{type, value, raw_length}], context, _line, end_offset) do
+    {rest, [{type, value, end_offset - raw_length}], context}
+  end
+
+  @doc false
+  def build_quoted(parts, type) do
+    raw = Enum.join(parts)
+    value = raw |> binary_part(1, byte_size(raw) - 2) |> unescape()
+    {type, value, byte_size(raw)}
+  end
+
+  defp unescape(str), do: Regex.replace(~r/\\(.)/, str, "\\1")
+
+  sign = ascii_string([?+, ?-], 1)
+  digits = ascii_string([?0..?9], min: 1)
+  exponent = ascii_string([?e, ?E], 1) |> optional(sign) |> concat(digits)
+
+  real_number =
+    optional(sign)
+    |> choice([
+      digits |> string(".") |> concat(digits) |> optional(exponent),
+      digits |> concat(exponent)
+    ])
+    |> reduce({Enum, :join, []})
+    |> unwrap_and_tag(:real)
+    |> post_traverse({__MODULE__, :attach_offset, []})
+
+  rational_number =
+    optional(sign)
+    |> concat(digits)
+    |> string("/")
+    |> concat(digits)
+    |> reduce({Enum, :join, []})
+    |> unwrap_and_tag(:rational)
+    |> post_traverse({__MODULE__, :attach_offset, []})
+
+  integer_number =
+    optional(sign)
+    |> concat(digits)
+    |> reduce({Enum, :join, []})
+    |> unwrap_and_tag(:integer)
+    |> post_traverse({__MODULE__, :attach_offset, []})
+
+  number = choice([real_number, rational_number, integer_number])
+
+  # `<dollar_word>` and `<dollar_dollar_word>` share the `:system` token type.
   system_symbol =
     string("$")
-    |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1)
+    |> optional(string("$"))
+    |> concat(ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1))
     |> reduce({Enum, :join, []})
     |> unwrap_and_tag(:system)
     |> post_traverse({__MODULE__, :attach_offset, []})
@@ -83,15 +138,38 @@ defmodule ShotDs.Util.Lexer do
     |> map({__MODULE__, :categorize_atom, []})
     |> post_traverse({__MODULE__, :attach_offset, []})
 
+  quoted_content = fn quote_char ->
+    repeat(
+      choice([
+        string("\\") |> utf8_string([], 1),
+        utf8_string([not: quote_char, not: ?\\], 1)
+      ])
+    )
+  end
+
+  single_quoted =
+    string("'")
+    |> concat(quoted_content.(?'))
+    |> string("'")
+    |> reduce({__MODULE__, :build_quoted, [:distinct]})
+    |> post_traverse({__MODULE__, :attach_raw_offset, []})
+
   distinct_object =
-    ignore(string("'"))
-    |> concat(ascii_string([not: ?'], min: 1))
-    |> ignore(string("'"))
-    |> unwrap_and_tag(:distinct)
-    |> post_traverse({__MODULE__, :attach_offset, []})
+    string("\"")
+    |> concat(quoted_content.(?"))
+    |> string("\"")
+    |> reduce({__MODULE__, :build_quoted, [:distinct_object]})
+    |> post_traverse({__MODULE__, :attach_raw_offset, []})
 
   symbols =
     choice([
+      # Sequents, definitions and let-bindings
+      string("-->") |> replace({:gentzen_arrow, "-->"}),
+      string("-") |> replace({:minus, "-"}),
+      string(":=") |> replace({:assignment, ":="}),
+      string("==") |> replace({:identical, "=="}),
+      string("<<") |> replace({:subtype, "<<"}),
+
       # Connectives
       string("<=>") |> replace({:equiv, "<=>"}),
       string("=>") |> replace({:implies, "=>"}),
@@ -105,9 +183,15 @@ defmodule ShotDs.Util.Lexer do
       string("!=") |> replace({:neq, "!="}),
       string("!>") |> replace({:forall_type, "!>"}),
       string("!") |> replace({:forall, "!"}),
+      string("?*") |> replace({:exists_type, "?*"}),
       string("??") |> replace({:exists, "??"}),
       string("?") |> replace({:exists, "?"}),
       string("^") |> replace({:lambda, "^"}),
+      string("@@+") |> replace({:choice_const, "@@+"}),
+      string("@@-") |> replace({:description_const, "@@-"}),
+      string("@+") |> replace({:choice, "@+"}),
+      string("@-") |> replace({:description, "@-"}),
+      string("@=") |> replace({:eq, "@="}),
       string("@") |> replace({:app, "@"}),
       string("~") |> replace({:not, "~"}),
       string("|") |> replace({:or, "|"}),
@@ -124,7 +208,9 @@ defmodule ShotDs.Util.Lexer do
       string(".") |> replace({:dot, "."}),
 
       # Types
-      string(">") |> replace({:arrow, ">"})
+      string(">") |> replace({:arrow, ">"}),
+      string("*") |> replace({:star, "*"}),
+      string("+") |> replace({:plus, "+"})
     ])
     |> post_traverse({__MODULE__, :attach_offset, []})
 
@@ -133,11 +219,14 @@ defmodule ShotDs.Util.Lexer do
     repeat(
       choice([
         whitespace,
-        comment,
+        comment_line,
+        comment_block,
+        number,
         symbols,
         system_symbol,
         variable,
         atom_ident,
+        single_quoted,
         distinct_object
       ])
     )
