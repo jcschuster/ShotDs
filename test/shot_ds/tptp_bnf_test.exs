@@ -140,6 +140,18 @@ defmodule ShotDs.TptpBnfTest do
       assert Parser.unparse_type(Parser.parse_type!("$int>$rat>$real")) == "$int > $rat > $real"
     end
 
+    test "round-trips a mapping type into a user-declared base type" do
+      assert Parser.unparse_type(Parser.parse_type!("$int>pt")) == "$int > pt"
+      assert Parser.unparse_type(Parser.parse_type!("($int>pt)>pt>$o")) == "($int > pt) > pt > $o"
+    end
+
+    test "renders declared type constructors as applications" do
+      type = Parser.parse_type!("$int>pt")
+
+      assert Parser.with_type_constructors([:pt], fn -> Parser.unparse_type(type) end) ==
+               "pt @ $int"
+    end
+
     test "rejects a <defined_type> used in term position" do
       assert {:error, msg} = Tptp.parse_tptp_string("thf(ax,axiom,$true & $i).")
       assert String.contains?(msg, "denotes a type")

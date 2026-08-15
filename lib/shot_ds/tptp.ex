@@ -23,7 +23,14 @@ defmodule ShotDs.Tptp do
   - the full lexical layer: line and block comments, `<single_quoted>` words
     with escapes, `<distinct_object>`s, `<dollar_word>`s and
     `<dollar_dollar_word>`s, and `<integer>`/`<rational>`/`<real>` literals,
-    which become constants of type `$int`/`$rat`/`$real`.
+    which become constants of type `$int`/`$rat`/`$real`;
+  - the arithmetic `<defined_functor>`s and `<defined_predicate>`s (`$less`,
+    `$sum`, `$to_real`, …), which are ad-hoc polymorphic in the numeric sort,
+    so that a problem may use them at `$int`, `$rat` and `$real` alike.
+
+  Binders scope over a single `<thf_unit_formula>`; an application chain or a
+  binary connective following the body belongs to the enclosing formula, not to
+  the binder. See `ShotDs.Parser` for details.
 
   Some TPTP constructs have no counterpart in Church's simple type theory and
   are rejected with a descriptive error rather than silently mis-parsed:
@@ -519,7 +526,23 @@ defmodule ShotDs.Tptp do
 
   # --- Problem string builder ---
 
-  defp build_problem_string(%Problem{
+  defp build_problem_string(%Problem{types: types} = problem) do
+    # `α > c` and `c @ α` share a representation, so the unparser needs to know
+    # which names were declared with a type-constructor kind (`$tType > …`).
+    Parser.with_type_constructors(type_constructor_names(types), fn ->
+      do_build_problem_string(problem)
+    end)
+  end
+
+  defp type_constructor_names(types) do
+    for {name, decl} <- types, type_constructor_kind?(decl), do: String.to_atom(name)
+  end
+
+  defp type_constructor_kind?(%TypeScheme{body: body}), do: type_constructor_kind?(body)
+  defp type_constructor_kind?(%Type{goal: :tType, args: [_ | _]}), do: true
+  defp type_constructor_kind?(_decl), do: false
+
+  defp do_build_problem_string(%Problem{
          types: types,
          definitions: defs,
          axioms: axioms,

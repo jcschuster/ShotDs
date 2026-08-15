@@ -62,19 +62,46 @@ defmodule ShotDs.Th1Test do
     ctx = Context.new() |> Context.put_const("member", member_scheme)
 
     term_id =
-      Parser.parse("![A: $tType, C: A, A3: set @ A]: member @ A @ C @ A3", ctx: ctx) |> ok!()
+      Parser.parse("![A: $tType, C: A, A3: set @ A]: ( member @ A @ C @ A3 )", ctx: ctx) |> ok!()
 
     assert %ShotDs.Data.Term{type: %ShotDs.Data.Type{goal: :o}} = term!(term_id)
+  end
+
+  test "parse/2 erases single-quoted type arguments" do
+    {:ok, nil_scheme} = Parser.parse_type_scheme("!>[A: $tType]: 'ListOf' @ A")
+
+    ctx =
+      Context.new()
+      |> Context.put_const("nil/0", nil_scheme)
+
+    term_id = Parser.parse("'nil/0' @ 'Polynomial'", ctx: ctx) |> ok!()
+
+    assert %ShotDs.Data.Term{type: %ShotDs.Data.Type{goal: :ListOf, args: [_]}} = term!(term_id)
+  end
+
+  test "parse_tptp_string/2 parses a problem whose type names are single-quoted" do
+    content = """
+    thf('ListOf_type', type, 'ListOf': $tType > $tType).
+    thf('Polynomial_type', type, 'Polynomial': $tType).
+    thf('nil/0_type', type, 'nil/0': !>[Tv0: $tType]: ( 'ListOf' @ Tv0 )).
+    thf('length/1_type', type,
+        'length/1': !>[Tv0: $tType]: ( ( 'ListOf' @ Tv0 ) > $int )).
+    thf('.def_length_nil_axiom', axiom,
+        ( ( 'length/1' @ 'Polynomial' @ ( 'nil/0' @ 'Polynomial' ) ) = 0 )).
+    """
+
+    assert {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
+    assert length(problem.axioms) == 1
   end
 
   test "parse_tptp_string/2 parses polymorphic constant applied to term variables without explicit type args" do
     content = """
     thf(leibniz_t, type, l: A > A > $o).
     thf(leibniz_def, definition,
-      l = ^[X, Y]: ![P]: P @ X => P @ Y
+      l = ^[X, Y]: ( ![P]: ( ( P @ X ) => ( P @ Y ) ) )
     ).
     thf(conj, conjecture,
-      ![X: $i]: l @ X @ X
+      ![X: $i]: ( l @ X @ X )
     ).
     """
 
@@ -87,7 +114,7 @@ defmodule ShotDs.Th1Test do
     content = """
     thf(leibniz_t, type, l: A > A > $o).
     thf(leibniz_def, definition,
-      l = ^[X, Y]: ![P]: P @ X => P @ Y
+      l = ^[X, Y]: ( ![P]: ( ( P @ X ) => ( P @ Y ) ) )
     ).
     thf(conj, conjecture,
       ![X: $i, Y: $i, F: $i > $i]: (
@@ -107,7 +134,7 @@ defmodule ShotDs.Th1Test do
     content = """
     thf(set_type, type, set: $tType > $tType).
     thf(member_type, type, member: !>[A: $tType]: A > set @ A > $o).
-    thf(ax1, axiom, ![A: $tType, C: A, A3: set @ A]: member @ A @ C @ A3).
+    thf(ax1, axiom, ![A: $tType, C: A, A3: set @ A]: ( member @ A @ C @ A3 )).
     """
 
     assert {:ok, problem} = Tptp.parse_tptp_string(content, "memory")

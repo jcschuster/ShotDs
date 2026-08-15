@@ -8,31 +8,46 @@ defmodule ShotDs.Parser do
   type after parsing, it can be specified to unify their type with type o. The
   main entry point is the `parse/2` function.
 
-  The parser follows standard TH0 precedence rules. The binding strength is
-  listed below from **strongest (tightest binding)** to **weakest**.
+  The parser follows the TPTP BNF
+  (https://tptp.org/UserDocs/TPTPLanguage/SyntaxBNF.html). The binding strength
+  is listed below from **strongest (tightest binding)** to **weakest**.
 
-      (Strongest)   @                   [Application]
+      (Strongest)   !, ?, !!, ??, ^     [Quantors/Binders]
+                    @                   [Application]
                     =, !=               [Equality]
                     ~                   [Negation]
                     &, ~&               [Conjunction]
                     |, ~|               [Disjunction]
-                    =>, <=, <=>, <~>    [Implication]
-      (Weakest)     !, ?, !!, ??,  ^    [Quantors/Binders]
+      (Weakest)     =>, <=, <=>, <~>    [Implication]
 
   The TH0 syntax is specified in https://doi.org/10.1007/s10817-017-9407-7 for
   reference.
 
-  Note that the usage of binders requires special care when using parentheses.
-  If the body of the term starts with a parenthesis, the range of the binder is
-  limited to the next closing parenthesis.
+  Note that the usage of binders requires special care. A binder scopes over a
+  single `<thf_unit_formula>` only — an atom, a variable, a parenthesized
+  formula, another binder, a `~`-prefixed unit formula, or an infix
+  (in)equation between unitary terms. Application chains and binary connectives
+  are *not* part of the body; they continue **outside** the binder, as the TPTP
+  BNF spells out:
 
-  For example, the following parses as `"![X : $o]: ($false => (X => $true))"`:
+      %----@ (denoting apply) is left-associative and lambda is right-associative.
+      %----^ [X] : ^ [Y] : f @ g (where f is a <thf_apply_formula> and g is a
+      %----<thf_unitary_formula>) should be parsed as: (^ [X] : (^ [Y] : f)) @ g.
+      %----That is, g is not in the scope of either lambda.
 
-      iex> parse "![X : $o]: $false => (X => $true)"
+      iex> parse!("^ [X: $i] : f @ g", ctx: ~e(f: $i>$o, g: $i)) ==
+      ...>   parse!("( ^ [X: $i] : f ) @ g", ctx: ~e(f: $i>$o, g: $i))
+      true
 
-  While this will be parsed as `"(![X : $o]: (f @ X)) | (g @ X)"`:
+  Likewise a binder never extends across a binary connective, so the following
+  parses as `"(![X : $o]: $false) => (X => $true)"`:
 
-      iex> parse "![X : $o]: (f @ X) | (g @ X)"
+      iex> parse!("![X : $o]: $false => (X => $true)") ==
+      ...>   parse!("(![X : $o]: $false) => (X => $true)")
+      true
+
+  Parenthesize the body to bind the whole formula, as in
+  `"![X : $i]: (p @ X)"`.
 
   > #### Note {: .info}
   >
@@ -665,9 +680,6 @@ defmodule ShotDs.Parser do
   defp get_pre_type({_, _, _, _, type}), do: type
   defp get_pre_type({_, _, type}), do: type
 
-  defp peek_offset([{_, _, off} | _]), do: off
-  defp peek_offset(_), do: 0
-
   # Level 1: <, >, <=, =>, <=>, <~>
 
   defp parse_formula(tokens, ctx, subst) do
@@ -826,23 +838,22 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_unitary([{:forall, _, _} | rest], ctx, subst),
-    do: parse_quantifier(:forall, rest, ctx, subst)
-
-  defp parse_unitary([{:exists, _, _} | rest], ctx, subst),
-    do: parse_quantifier(:exists, rest, ctx, subst)
-
-  defp parse_unitary([{:lambda, _, _} | rest], ctx, subst),
-    do: parse_lambda(rest, ctx, subst)
-
+  # Binders (`!`, `?`, `^`, `@+`, `@-`) are `<thf_unitary_formula>`s and are
+  # therefore parsed by `parse_atomic/3`, so that an enclosing application
+  # chain or (in)equation continues after the binder rather than inside it.
   defp parse_unitary(tokens, ctx, subst), do: parse_equality(tokens, ctx, subst)
 
   # `<identical>` (`==`) forms a `<thf_definition>`; semantically it states that
   # both sides denote the same object, so it is parsed as an equality.
-  defp parse_equality(tokens, ctx, subst) do
-    case parse_application(tokens, ctx, subst) do
+  #
+  # `operand` parses the two sides. `<thf_defined_infix>` and
+  # `<thf_infix_unary>` take `<thf_unitary_term>`s, which is what
+  # `parse_atomic/3` accepts; outside a binder body the operands may be whole
+  # application chains, as `@` binds tighter than `=`.
+  defp parse_equality(tokens, ctx, subst, operand \\ &parse_application/3) do
+    case operand.(tokens, ctx, subst) do
       {:ok, {lhs, [{eq_like, _, off} | rest], ctx2, subst2}} when eq_like in [:eq, :identical] ->
-        with {:ok, {rhs, rest2, ctx3, s1}} <- parse_application(rest, ctx2, subst2),
+        with {:ok, {rhs, rest2, ctx3, s1}} <- operand.(rest, ctx2, subst2),
              {:ok, s2} <- unify_at(get_pre_type(lhs), get_pre_type(rhs), s1, off) do
           lhs_type = get_pre_type(lhs)
           eq_type = Type.new(:o, [lhs_type, lhs_type])
@@ -855,7 +866,7 @@ defmodule ShotDs.Parser do
         end
 
       {:ok, {lhs, [{:neq, _, off} | rest], ctx2, subst2}} ->
-        with {:ok, {rhs, rest2, ctx3, s1}} <- parse_application(rest, ctx2, subst2),
+        with {:ok, {rhs, rest2, ctx3, s1}} <- operand.(rest, ctx2, subst2),
              {:ok, s2} <- unify_at(get_pre_type(lhs), get_pre_type(rhs), s1, off) do
           lhs_type = get_pre_type(lhs)
           eq_type = Type.new(:o, [lhs_type, lhs_type])
@@ -957,7 +968,8 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_type_arg([{:atom, name, _} | rest], ctx) do
+  defp parse_type_arg([{atom_like, name, _} | rest], ctx)
+       when atom_like in [:atom, :distinct, :distinct_object] do
     if Context.get_const_scheme(ctx, name) != nil do
       {:error, "TH1: '#{name}' is a known constant, not a type argument"}
     else
@@ -993,10 +1005,7 @@ defmodule ShotDs.Parser do
              Context.put_var(acc, name, type)
            end),
          {:ok, {body_pre_term, rest_tokens, _body_ctx, subst2}} <-
-           (case body_tokens do
-              [{:lparen, _, _} | _] -> parse_atomic(body_tokens, inner_ctx, subst)
-              _ -> parse_formula(body_tokens, inner_ctx, subst)
-            end),
+           parse_binder_body(body_tokens, inner_ctx, subst),
          {:ok, subst3} <-
            unify_at(get_pre_type(body_pre_term), Definitions.type_o(), subst2, off) do
       quant_name = if type_key == :forall, do: "∀", else: "∃"
@@ -1045,21 +1054,6 @@ defmodule ShotDs.Parser do
     end
   end
 
-  defp parse_quantifier(type_key, rest, ctx, subst) do
-    off = peek_offset(rest)
-
-    with {:ok, {term, rest2, ctx2, subst2}} <- parse_unitary(rest, ctx, subst),
-         term_type = get_pre_type(term),
-         alpha = Type.fresh_type_var(),
-         expected_pred_type = Type.new(:o, [alpha]),
-         {:ok, subst3} <- unify_at(term_type, expected_pred_type, subst2, off) do
-      quant_name = if type_key == :forall, do: "∀", else: "∃"
-      quant_const_type = Type.new(:o, [expected_pred_type])
-      quant_const = {:pre_const, quant_name, quant_const_type}
-      {:ok, {{:pre_app, quant_const, term, Definitions.type_o()}, rest2, ctx2, subst3}}
-    end
-  end
-
   defp parse_lambda([{:lbracket, _, _} | rest], ctx, subst) do
     with {:ok, {vars, updated_tvar_env, rest_after_vars}} <-
            parse_typed_vars_with_inference(rest, ctx.type_vars),
@@ -1070,10 +1064,7 @@ defmodule ShotDs.Parser do
            end),
          [{:rbracket, _, _}, {:colon, _, _} | body_tokens] <- rest_after_vars,
          {:ok, {body_pre_term, rest_tokens, _body_ctx, subst2}} <-
-           (case body_tokens do
-              [{:lparen, _, _} | _] -> parse_atomic(body_tokens, inner_ctx, subst)
-              _ -> parse_formula(body_tokens, inner_ctx, subst)
-            end) do
+           parse_binder_body(body_tokens, inner_ctx, subst) do
       term =
         Enum.reverse(vars)
         |> Enum.reduce(body_pre_term, fn {name, type}, acc ->
@@ -1092,6 +1083,28 @@ defmodule ShotDs.Parser do
         err
     end
   end
+
+  # The body of a binder is a `<thf_unit_formula>`: a unitary formula, a
+  # `~`-prefixed formula or an infix (in)equation — never an application chain
+  # and never a binary connective. Both continue *outside* the binder, as the
+  # TPTP BNF spells out for `@`:
+  #
+  #     ^ [X] : ^ [Y] : f @ g   is   ( ^ [X] : ( ^ [Y] : f ) ) @ g
+  #
+  # A body starting with `(` is a parenthesized `<thf_logic_formula>` and is
+  # parsed as such by `parse_atomic/3`.
+  defp parse_binder_body([{:not, _, off} | [next | _] = rest], ctx, subst)
+       when elem(next, 0) not in [:app, :rparen] do
+    with {:ok, {term, rest2, ctx2, s1}} <- parse_binder_body(rest, ctx, subst),
+         {:ok, s2} <- unify_at(get_pre_type(term), Definitions.type_o(), s1, off) do
+      {:ok,
+       {{:pre_app, {:pre_const, "~", Definitions.type_oo()}, term, Definitions.type_o()}, rest2,
+        ctx2, s2}}
+    end
+  end
+
+  defp parse_binder_body(tokens, ctx, subst),
+    do: parse_equality(tokens, ctx, subst, &parse_atomic/3)
 
   # Parses a binder variable list `X, Y: $i, Z: set @ A, ...` returning:
   #   {:ok, {term_vars, updated_tvar_env, remaining_tokens}}
@@ -1364,16 +1377,57 @@ defmodule ShotDs.Parser do
 
       _ ->
         case Context.get_type(ctx, name) do
-          nil ->
-            new_type = Type.fresh_type_var()
-            ctx2 = Context.put_const(ctx, name, new_type)
-            {:ok, {{:pre_const, name, new_type}, rest, ctx2, subst}}
-
-          type ->
-            {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
+          nil -> parse_undeclared_constant(name, rest, ctx, subst)
+          type -> {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
         end
     end
   end
+
+  # TPTP's arithmetic constants are ad-hoc polymorphic over the numeric sorts
+  # and are never declared in a problem file, so each occurrence is instantiated
+  # afresh and nothing is recorded in the context. Every other undeclared
+  # constant keeps one type variable shared by all of its occurrences.
+  defp parse_undeclared_constant(name, rest, ctx, subst) do
+    case arithmetic_type(name) do
+      nil ->
+        new_type = Type.fresh_type_var()
+        ctx2 = Context.put_const(ctx, name, new_type)
+        {:ok, {{:pre_const, name, new_type}, rest, ctx2, subst}}
+
+      type ->
+        {:ok, {{:pre_const, name, type}, rest, ctx, subst}}
+    end
+  end
+
+  # The `<defined_functor>`s and `<defined_predicate>`s of TPTP arithmetic. They
+  # are polymorphic in the numeric sort α ∈ {`$int`, `$rat`, `$real`}; the
+  # restriction to those three sorts is not expressible as a rank-1 scheme and
+  # is left to the arithmetic theory.
+  @arith_relations ~w($less $lesseq $greater $greatereq)
+  @arith_binary ~w($sum $difference $product $quotient
+                   $quotient_e $quotient_t $quotient_f
+                   $remainder_e $remainder_t $remainder_f)
+  @arith_unary ~w($uminus $floor $ceiling $truncate $round)
+  @arith_predicates ~w($is_int $is_rat)
+
+  defp arithmetic_type(name), do: arithmetic_type(name, Type.fresh_type_var())
+
+  defp arithmetic_type(name, alpha) when name in @arith_relations,
+    do: Type.new(:o, [alpha, alpha])
+
+  defp arithmetic_type(name, alpha) when name in @arith_binary,
+    do: Type.new(alpha, [alpha, alpha])
+
+  defp arithmetic_type(name, alpha) when name in @arith_unary,
+    do: Type.new(alpha, [alpha])
+
+  defp arithmetic_type(name, alpha) when name in @arith_predicates,
+    do: Type.new(:o, [alpha])
+
+  defp arithmetic_type("$to_int", alpha), do: Type.new(:int, [alpha])
+  defp arithmetic_type("$to_rat", alpha), do: Type.new(:rat, [alpha])
+  defp arithmetic_type("$to_real", alpha), do: Type.new(:real, [alpha])
+  defp arithmetic_type(_name, _alpha), do: nil
 
   defp number_type(:integer), do: :int
   defp number_type(:rational), do: :rat
@@ -1406,19 +1460,40 @@ defmodule ShotDs.Parser do
 
   @doc """
   Converts a `Type.t()` to a TPTP type string.
+
+  The mapping type `α > c` and the type-constructor application `c @ α` share
+  one representation (`%Type{goal: c, args: [α]}`), so they can only be told
+  apart by the kind of `c`. The mapping reading is assumed unless `c` has been
+  declared a type constructor via `with_type_constructors/2`.
   """
   @spec unparse_type(Type.t()) :: String.t()
   def unparse_type(%Type{goal: goal, args: []}), do: unparse_type_atom(goal)
 
-  def unparse_type(%Type{goal: goal, args: args}) when goal in @defined_types do
-    arg_strs = Enum.map(args, &unparse_type_fn_arg/1)
-    Enum.join(arg_strs ++ [unparse_type_atom(goal)], " > ")
+  def unparse_type(%Type{goal: goal, args: args}) do
+    if type_constructor?(goal) do
+      arg_strs = Enum.map(args, &unparse_type_tc_arg/1)
+      Enum.join([unparse_type_atom(goal) | arg_strs], " @ ")
+    else
+      arg_strs = Enum.map(args, &unparse_type_fn_arg/1)
+      Enum.join(arg_strs ++ [unparse_type_atom(goal)], " > ")
+    end
   end
 
-  def unparse_type(%Type{goal: goal, args: args}) do
-    goal_str = unparse_type_atom(goal)
-    arg_strs = Enum.map(args, &unparse_type_tc_arg/1)
-    Enum.join([goal_str | arg_strs], " @ ")
+  @doc """
+  Runs `fun` with `names` (atoms) registered as type constructors, so that
+  `unparse_type/1` renders their applications as `c @ α` rather than as the
+  mapping type `α > c`. Returns the result of `fun`.
+  """
+  @spec with_type_constructors(Enumerable.t(), (-> result)) :: result when result: var
+  def with_type_constructors(names, fun) do
+    prev = Process.get(:tptp_type_constructors, MapSet.new())
+    Process.put(:tptp_type_constructors, MapSet.union(prev, MapSet.new(names)))
+
+    try do
+      fun.()
+    after
+      Process.put(:tptp_type_constructors, prev)
+    end
   end
 
   @doc """
@@ -1436,8 +1511,16 @@ defmodule ShotDs.Parser do
 
   # --- Type helpers ---
 
-  defp unparse_type_fn_arg(%Type{goal: g, args: [_ | _]} = t) when g in @defined_types,
-    do: "(#{unparse_type(t)})"
+  defp type_constructor?(goal) when is_atom(goal),
+    do: MapSet.member?(Process.get(:tptp_type_constructors, MapSet.new()), goal)
+
+  defp type_constructor?(_goal), do: false
+
+  # An argument that is itself a mapping type needs brackets, as `>` is
+  # right-associative; a type-constructor application does not.
+  defp unparse_type_fn_arg(%Type{goal: g, args: [_ | _]} = t) do
+    if type_constructor?(g), do: unparse_type(t), else: "(#{unparse_type(t)})"
+  end
 
   defp unparse_type_fn_arg(t), do: unparse_type(t)
 
@@ -1488,12 +1571,19 @@ defmodule ShotDs.Parser do
       {:ok, primitive?} = TF.primitive_term?(term_id)
 
       if primitive? do
-        do_unparse_atomic(term.head, scope)
+        do_unparse_atomic(unshift_head(term.head, length(term.bvars)), scope)
       else
         do_unparse_lambda(term, scope)
       end
     end
   end
+
+  # A primitive term is the η-expansion `λx₁…xₙ. h @ x₁ @ … @ xₙ` of `h` and is
+  # printed as plain `h`. The de Bruijn index of `h` counts the n binders that
+  # are dropped along with the expansion, so it has to be shifted back into the
+  # enclosing scope.
+  defp unshift_head(%Declaration{kind: :bv, name: k} = head, n), do: %{head | name: k - n}
+  defp unshift_head(head, _n), do: head
 
   defp do_unparse_atomic(%Declaration{kind: :bv, name: k}, scope),
     do: {Enum.at(scope, k - 1), 7}

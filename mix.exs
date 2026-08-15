@@ -1,7 +1,7 @@
 defmodule ShotDs.MixProject do
   use Mix.Project
 
-  @version "1.2.10"
+  @version "1.3.0"
   @source_url "https://github.com/jcschuster/ShotDs"
 
   def project do
@@ -43,6 +43,7 @@ defmodule ShotDs.MixProject do
       main: "readme",
       extras: [
         "README.md",
+        "CHANGELOG.md",
         "examples/demo.livemd"
       ],
       source_url: @source_url,
@@ -95,7 +96,7 @@ defmodule ShotDs.MixProject do
       links: %{
         "GitHub" => @source_url
       },
-      files: ~w(lib LICENSE mix.exs README.md)
+      files: ~w(lib LICENSE mix.exs README.md CHANGELOG.md)
     ]
   end
 

@@ -111,7 +111,10 @@ union types, `?*` and `$let` — are rejected with a descriptive error. The
 lists the coverage in full.
 
 The module [`ShotDs.Parser`](https://hexdocs.pm/shot_ds/ShotDs.Parser.html)
-handles simple formula strings such as `"?[X : $o]: X => $true"`.
+handles simple formula strings such as `"?[X : $o]: (X => $true)"`. Binders
+scope over a single `<thf_unit_formula>` as prescribed by the TPTP BNF, so an
+application chain or a binary connective following the body continues *outside*
+the binder — parenthesise the body when it should be part of it.
 
 File parsing for TPTP problem files is handeled by
 [`ShotDs.Tptp`](https://hexdocs.pm/shot_ds/ShotDs.Tptp.html). Note that parsing
@@ -130,7 +133,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 1.2"}
+    {:shot_ds, "~> 1.3"}
   ]
 end
 ```

@@ -178,4 +178,72 @@ defmodule ShotDs.ParserTest do
 
     assert %Term{type: %Type{goal: :i}} = term!(term_id)
   end
+
+  ########## Binder scope (`<thf_quantification> <thf_unit_formula>`) ##########
+
+  test "parse/2 keeps the application chain outside the binder" do
+    ctx =
+      Context.new()
+      |> Context.put_const("f", Type.new(:o, [:i]))
+      |> Context.put_const("g", Type.new(:i))
+
+    assert Parser.parse!("^ [X: $i] : f @ g", ctx: ctx) ==
+             Parser.parse!("( ^ [X: $i] : f ) @ g", ctx: ctx)
+  end
+
+  test "parse/2 does not let a binder in argument position steal the arguments" do
+    ctx =
+      Context.new()
+      |> Context.put_const("m2", Type.new(:o, [Type.new(:o, [:a, :b]), Type.new(:o, [:a, :b])]))
+      |> Context.put_const("g", Type.new(:o, [:b]))
+      |> Context.put_const("prof", Type.new(:o, [:a, :b]))
+
+    assert Parser.parse!("m2 @ ^ [P: a] : g @ prof", ctx: ctx) ==
+             Parser.parse!("m2 @ ( ^ [P: a] : g ) @ prof", ctx: ctx)
+  end
+
+  test "parse/2 keeps a binary connective outside the binder" do
+    assert Parser.parse!("![X : $o]: $false => (X => $true)") ==
+             Parser.parse!("(![X : $o]: $false) => (X => $true)")
+  end
+
+  test "parse/2 keeps `~` inside the binder body" do
+    ctx = Context.new() |> Context.put_const("p", Type.new(:o, [:i]))
+
+    negated = Parser.parse!("^ [X: $i] : ~ ( p @ X )", ctx: ctx)
+
+    assert %Term{bvars: [_], head: %Declaration{name: "¬"}} = term!(negated)
+    assert negated == Parser.parse!("^ [X: $i] : ( ~ ( p @ X ) )", ctx: ctx)
+  end
+
+  test "parse/2 keeps an infix equation inside the binder body" do
+    ctx = Context.new() |> Context.put_const("p", Type.new(:o, [:i]))
+
+    equation = Parser.parse!("^ [X: $i] : ( p @ X ) = ( p @ X )", ctx: ctx)
+
+    assert %Term{bvars: [_], head: %Declaration{name: "="}} = term!(equation)
+  end
+
+  ########## TPTP arithmetic ##########
+
+  test "parse/1 instantiates arithmetic constants at each occurrence" do
+    ctx =
+      Context.new()
+      |> Context.put_const("i", Type.new(:int))
+      |> Context.put_const("r", Type.new(:real))
+
+    term_id = Parser.parse("( $less @ i @ i ) & ( $less @ r @ r )", ctx: ctx) |> ok!()
+
+    assert %Term{type: %Type{goal: :o}} = term!(term_id)
+  end
+
+  test "parse/1 types arithmetic functions and conversions" do
+    ctx = Context.new() |> Context.put_const("i", Type.new(:int))
+
+    sum = Parser.parse("$sum @ i @ i", ctx: ctx) |> ok!()
+    to_real = Parser.parse("$to_real @ i", ctx: ctx) |> ok!()
+
+    assert %Term{type: %Type{goal: :int}} = term!(sum)
+    assert %Term{type: %Type{goal: :real}} = term!(to_real)
+  end
 end

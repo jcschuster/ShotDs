@@ -174,7 +174,7 @@ defmodule ShotDs.TptpTest do
 
   test "unparse/1 renders universal quantification" do
     {:ok, problem} =
-      Tptp.parse_tptp_string("thf(p_t,type,p:$i>$o). thf(ax,axiom,![X:$i]: p @ X).", "memory")
+      Tptp.parse_tptp_string("thf(p_t,type,p:$i>$o). thf(ax,axiom,![X:$i]: ( p @ X )).", "memory")
 
     {_, term_id} = hd(problem.axioms)
     assert {:ok, formula} = Parser.unparse(term_id)
@@ -185,7 +185,7 @@ defmodule ShotDs.TptpTest do
 
   test "unparse/1 renders existential quantification" do
     {:ok, problem} =
-      Tptp.parse_tptp_string("thf(p_t,type,p:$i>$o). thf(ax,axiom,?[X:$i]: p @ X).", "memory")
+      Tptp.parse_tptp_string("thf(p_t,type,p:$i>$o). thf(ax,axiom,?[X:$i]: ( p @ X )).", "memory")
 
     {_, term_id} = hd(problem.axioms)
     assert {:ok, formula} = Parser.unparse(term_id)
@@ -195,7 +195,7 @@ defmodule ShotDs.TptpTest do
   test "unparse/1 flattens nested universal quantifiers" do
     {:ok, problem} =
       Tptp.parse_tptp_string(
-        "thf(p_t,type,p:$i>$i>$o). thf(ax,axiom,![X:$i,Y:$i]: p @ X @ Y).",
+        "thf(p_t,type,p:$i>$i>$o). thf(ax,axiom,![X:$i,Y:$i]: ( p @ X @ Y )).",
         "memory"
       )
 
@@ -237,6 +237,46 @@ defmodule ShotDs.TptpTest do
     assert String.contains?(output, "thf(ax1, axiom,")
     assert String.contains?(output, "thf(cj, conjecture,")
     assert String.contains?(output, "p @")
+  end
+
+  test "unparse/1 names a bound variable passed as an argument" do
+    {:ok, problem} =
+      Tptp.parse_tptp_string(
+        "thf(p_t,type,p:($i>$i)>$o). thf(ax,axiom,![F:$i>$i]: ( p @ F )).",
+        "memory"
+      )
+
+    {_, term_id} = hd(problem.axioms)
+
+    assert {:ok, "![X1: $i > $i]: (p @ X1)"} = Parser.unparse(term_id)
+  end
+
+  test "unparse_problem/1 round-trips a mapping type into a declared base type" do
+    content = """
+    thf(pt,type,pt: $tType).
+    thf(cp,type,cp: ( $int > pt ) > pt > $o).
+    thf(ax,axiom,![F: $int > pt, P: pt]: ( cp @ F @ P )).
+    """
+
+    {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
+    assert {:ok, output} = Tptp.unparse_problem(problem)
+    assert String.contains?(output, "cp: ($int > pt) > pt > $o)")
+    assert String.contains?(output, "![X1: $int > pt, X2: pt]: (cp @ X1 @ X2)")
+    assert {:ok, _reparsed} = Tptp.parse_tptp_string(output, "memory")
+  end
+
+  test "unparse_problem/1 keeps declared type constructors in application form" do
+    content = """
+    thf(set_type,type,set: $tType > $tType).
+    thf(member_type,type,member: !>[A: $tType]: A > set @ A > $o).
+    thf(ax,axiom,![A: $tType, C: A, S: set @ A]: ( member @ A @ C @ S )).
+    """
+
+    {:ok, problem} = Tptp.parse_tptp_string(content, "memory")
+    assert {:ok, output} = Tptp.unparse_problem(problem)
+    assert String.contains?(output, "member: !>[A: $tType]: A > set @ A > $o)")
+    assert String.contains?(output, "set @ A]:")
+    assert {:ok, _reparsed} = Tptp.parse_tptp_string(output, "memory")
   end
 
   defp mk_tmp_dir do

@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:shot_ds, "~> 1.2.4"},
+  {:shot_ds, "~> 1.3"},
   {:kino, "~> 0.19.0"}
 ])
 ```
@@ -76,7 +76,7 @@ The module `ShotDs.Parser` offers powerful parsing capabilities with full type i
 ```elixir
 alias ShotDs.Parser
 
-Parser.parse!("?[X : $o]: X => $true")
+Parser.parse!("?[X : $o]: (X => $true)")
 |> format!() |> IO.puts()
 ```
 
@@ -103,7 +103,7 @@ Parsing is also available via [Sigils](https://hexdocs.pm/elixir/sigils.html) fo
 ```elixir
 import ShotDs.Hol.Sigils
 
-~f(?[X : $o]: X => $true) |> format!() |> IO.puts()
+~f(?[X : $o]: (X => $true)) |> format!() |> IO.puts()
 
 with_context(~e[X : $o, p : $o>$i], fn ->
   ~f(p @ X) |> format!(false) |> IO.puts()
@@ -130,7 +130,7 @@ Kino.Layout.grid([
 ], columns: 2)
 ```
 
-Bound variables get freshly reconstructed names drawn from a **type-specific pool** — individuals `X, Y, Z, U, V, W`; propositions and predicates `P, Q, R, S`; relations `R, S, T, U`; functions `F, G, H, K`. All variables are uppercase by TPTP convention; constants are lowercase. Duplicates are disambiguated with a *superscript* (subscripts are reserved for the type annotation).
+Bound variables get freshly reconstructed names drawn from a **type-specific pool** — individuals `X, Y, Z, U, V, W`; propositions and predicates `P, Q, R, S`; relations `R, S, T, U`; functions `F, G, H, K`. All variables are uppercase by TPTP convention; constants are lowercase. Duplicates are disambiguated with a _superscript_ (subscripts are reserved for the type annotation).
 
 Function application uses `~` (LaTeX non-breaking space) to keep a head glued to its arguments, and binders are followed by `\,` (thin space).
 
@@ -228,10 +228,10 @@ thf(p_type,type,
     p: e>$o).
 
 thf(lma,lemma,
-    ![X : e]: p @ X).
+    ![X : e]: ( p @ X )).
 
 thf(conj,conjecture,
-    ?[Y : e]: p @ Y).
+    ?[Y : e]: ( p @ Y )).
 """
 
 IO.inspect(problem)
