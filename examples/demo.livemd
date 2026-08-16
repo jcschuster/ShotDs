@@ -17,7 +17,7 @@ in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:shot_ds, "~> 1.2"}
+    {:shot_ds, "~> 1.3"}
   ]
 end
 ```
@@ -103,7 +103,7 @@ Parsing is also available via [Sigils](https://hexdocs.pm/elixir/sigils.html) fo
 ```elixir
 import ShotDs.Hol.Sigils
 
-~f(?[X : $o]: (X => $true)) |> format!() |> IO.puts()
+~f| ?[X : $o]: (X => $true) | |> format!() |> IO.puts()
 
 with_context(~e[X : $o, p : $o>$i], fn ->
   ~f(p @ X) |> format!(false) |> IO.puts()
@@ -135,7 +135,7 @@ Bound variables get freshly reconstructed names drawn from a **type-specific poo
 Function application uses `~` (LaTeX non-breaking space) to keep a head glued to its arguments, and binders are followed by `\,` (thin space).
 
 ```elixir
-# Church numeral 2: λ f c. f (f c). f is a function ι → ι, c is an individual.
+# Church numeral 2: \f c. f (f c). f is a function i->i, c is an individual.
 church2 =
   lambda([type_ii(), type_i()], fn f, c ->
     app(f, app(f, c))
